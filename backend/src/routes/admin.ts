@@ -22,5 +22,45 @@ router.post('/moderate', requireAdmin, async (req, res) => {
   }
 });
 
+import { getAllUsers, updateUserStatus, getAllContent, deleteGeneratedContent } from '../services/storage';
+
+router.get('/users', requireAdmin, async (req, res) => {
+  try {
+    const users = await getAllUsers();
+    return res.json(users);
+  } catch (err: any) {
+    return res.status(500).json({ message: 'Failed to fetch users' });
+  }
+});
+
+router.post('/users/:id/status', requireAdmin, async (req, res) => {
+  const { status } = req.body;
+  if (!['active', 'blocked'].includes(status)) return res.status(400).json({ message: 'Invalid status' });
+  try {
+    await updateUserStatus(req.params.id, status);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    return res.status(500).json({ message: 'Failed to update status' });
+  }
+});
+
+router.get('/content', requireAdmin, async (req, res) => {
+  try {
+    const content = await getAllContent();
+    return res.json(content);
+  } catch (err: any) {
+    return res.status(500).json({ message: 'Failed to fetch content' });
+  }
+});
+
+router.delete('/content/:id', requireAdmin, async (req, res) => {
+  try {
+    await deleteGeneratedContent(req.params.id);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    return res.status(500).json({ message: 'Failed to delete content' });
+  }
+});
+
 export default router;
 

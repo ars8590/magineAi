@@ -67,6 +67,24 @@ export async function findAdmin(username: string) {
   return data;
 }
 
+export async function createUser(email: string, passwordHash: string, name: string) {
+  const client = getClient();
+  const { data, error } = await client
+    .from('users')
+    .insert({ email, password_hash: passwordHash, name })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function findUser(email: string) {
+  const client = getClient();
+  const { data, error } = await client.from('users').select('*').eq('email', email).single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return data;
+}
+
 export async function moderateContentRecord(contentId: string, status: 'approved' | 'rejected') {
   const client = getClient();
   const { error } = await client
@@ -105,3 +123,49 @@ export async function uploadImageFromUrl(sourceUrl: string) {
   return data.publicUrl;
 }
 
+
+export async function getUserLibrary(userId: string) {
+  const client = getClient();
+  const { data, error } = await client
+    .from('generated_content')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  if (error) throw error;
+
+  // Backfill 'type' since DB doesn't have it yet
+  const typedData = (data as GeneratedContent[]).map(item => ({
+    ...item,
+    type: 'magazine'
+  }));
+
+  return typedData;
+}
+
+export async function getAllUsers() {
+  const client = getClient();
+  const { data, error } = await client.from('users').select('id, name, email, created_at, status').order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+export async function updateUserStatus(userId: string, status: 'active' | 'blocked') {
+  const client = getClient();
+  const { error } = await client.from('users').update({ status }).eq('id', userId);
+  if (error) throw error;
+}
+
+export async function deleteGeneratedContent(contentId: string) {
+  const client = getClient();
+  const { error } = await client.from('generated_content').delete().eq('id', contentId);
+  if (error) throw error;
+}
+
+export async function getAllContent() {
+  const client = getClient();
+  const { data, error } = await client.from('generated_content').select('*, users(name)').order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as (GeneratedContent & { users: { name: string } | null })[];
+}

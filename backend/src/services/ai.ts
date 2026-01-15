@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { GenerationRequest } from '../types';
+import { GenerationRequest, MagazinePage, MagazineStructure } from '../types';
 import { config } from '../config';
 
 const unsafePatterns = [/violence/i, /hate/i, /nudity/i, /explicit/i];
@@ -17,252 +17,226 @@ function getGenAI() {
   return genAI;
 }
 
-function createStoryPrompt(input: GenerationRequest): string {
-  return `Generate a personalized magazine-style story for a ${input.age}-year-old reader.
+function planMagazine(input: GenerationRequest): MagazinePage[] {
+  const minPages = 5;
+  const requestedPages = input.pages || 25;
+  const totalPages = Math.max(requestedPages, minPages);
+  const pages: MagazinePage[] = [];
 
-Requirements:
-- Genre: ${input.genre}
-- Theme: ${input.theme}
-- Keywords to incorporate: ${input.keywords}
-- Language: ${input.language}
-- Age-appropriate content (suitable for ${input.age} years old)
-- Positive, educational, and engaging
+  let currentPage = 1;
 
-Structure your response EXACTLY in the following JSON format (no markdown, just valid JSON):
-{
-  "title": "Story title here",
-  "introduction": "A brief introduction paragraph (2-3 sentences)",
-  "main_story": "The main story content (3-5 paragraphs, engaging narrative)",
-  "character_highlights": "Description of key characters and their traits (1-2 paragraphs)",
-  "conclusion": "A meaningful conclusion with a positive message or moral (1-2 paragraphs)"
+  // 1. Cover (Always Page 1)
+  pages.push({ pageNumber: currentPage++, type: 'COVER', title: `${input.theme} Magazine` });
+
+  // 2. Front Matter (Editor's Note, TOC, Intro)
+  // For small magazines (< 8 pages), skip some front matter
+  if (totalPages >= 8) {
+    pages.push({ pageNumber: currentPage++, type: 'EDITOR_NOTE', title: "Editor's Note" });
+    pages.push({ pageNumber: currentPage++, type: 'CONTENTS', title: "Table of Contents" });
+  }
+  pages.push({ pageNumber: currentPage++, type: 'INTRODUCTION', title: "Introduction" });
+
+  // 3. Back Matter (Summary, Back Cover) - Reserve 2 pages at the end
+  const reservedForEnd = 2; // Summary + Back Cover
+  const lastPage = totalPages;
+  const contentEndPage = lastPage - reservedForEnd;
+
+  // 4. Chapters
+  // Fill the space from current page to contentEndPage
+  let chapterIndex = 1;
+  while (currentPage <= contentEndPage) {
+    pages.push({
+      pageNumber: currentPage++,
+      type: 'CHAPTER',
+      chapterNumber: chapterIndex++,
+      title: `Chapter ${chapterIndex}` // Placeholder
+    });
+  }
+
+  // 5. Summary
+  pages.push({ pageNumber: currentPage++, type: 'SUMMARY', title: "Summary & Highlights" });
+
+  // 6. Back Cover
+  pages.push({ pageNumber: currentPage++, type: 'BACK_COVER' });
+
+  // In matching specific requested counts, if we overshot (possible if totalPages was small and we forced front matter?),
+  // but logic above: starts at 1. Cover. 2. Intro (if total<8). Current=3.
+  // contentEndPage = 5 - 2 = 3.
+  // while (3 <= 3) -> push Chapter 1. Current=4.
+  // push Summary. Current=5.
+  // push Back Cover. Current=6.
+  // Wait, Cover(1), Intro(2), Ch(3), Sum(4), Back(5). 
+  // Length is 5. Correct.
+
+  return pages;
 }
 
-Important:
-- Make the story age-appropriate and safe
-- Incorporate the keywords naturally
-- Use the specified language
-- Keep content positive and educational
-- Return ONLY valid JSON, no additional text before or after`;
-}
+export async function generateStory(input: GenerationRequest): Promise<any> {
+  const genAI = getGenAI();
+  const model = genAI.getGenerativeModel({ model: 'models/gemini-2.5-flash' });
 
-function parseStoryResponse(response: string): {
-  title: string;
-  introduction: string;
-  main_story: string;
-  character_highlights: string;
-  conclusion: string;
-} {
+  // 1. Plan the magazine
+  const pages = planMagazine(input);
+  const magazine: MagazineStructure = {
+    title: `${input.theme} Magazine`,
+    totalPages: pages.length,
+    pages: pages
+  };
+
+  console.log(`Planning magazine with ${pages.length} pages.`);
+
+  // 2. Generate Titles (Small request)
+  const outlinePrompt = `Plan a ${pages.filter(p => p.type === 'CHAPTER').length}-chapter magazine about "${input.theme}" (` +
+    `Language: ${input.language || 'English'}, Genre: ${input.genre}, Keywords: ${input.keywords}, Age: ${input.age}). ` +
+    `Return ONLY a JSON array of specific chapter titles in ${input.language || 'English'}, e.g. ["Title 1", "Title 2"].`;
+
+  let chapterTitles: string[] = [];
   try {
-    // Remove markdown code blocks if present
-    let cleaned = response.trim();
-    cleaned = cleaned.replace(/^```json\s*/i, '');
-    cleaned = cleaned.replace(/^```\s*/i, '');
-    cleaned = cleaned.replace(/\s*```$/i, '');
-    cleaned = cleaned.trim();
-
-    // Try to extract JSON object from the response
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        title: parsed.title || 'Untitled Story',
-        introduction: parsed.introduction || '',
-        main_story: parsed.main_story || '',
-        character_highlights: parsed.character_highlights || '',
-        conclusion: parsed.conclusion || ''
-      };
-    }
-    // Fallback: try parsing the whole cleaned response
-    return JSON.parse(cleaned);
-  } catch (error) {
-    // If JSON parsing fails, create a structured response from the text
-    console.warn('Failed to parse JSON response, using fallback:', error);
-    const lines = response.split('\n').filter((l) => l.trim());
-    return {
-      title: lines[0] || 'Personalized Story',
-      introduction: lines.slice(1, 3).join(' ') || 'Welcome to this personalized story.',
-      main_story: lines.slice(3, 8).join(' ') || response.substring(0, 500),
-      character_highlights: lines.slice(8, 10).join(' ') || 'The characters in this story are engaging and relatable.',
-      conclusion: lines.slice(10).join(' ') || 'This story teaches valuable lessons about friendship and growth.'
-    };
+    const result = await model.generateContent(outlinePrompt);
+    const text = result.response.text().trim().replace(/```json/g, '').replace(/```/g, '');
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (jsonMatch) chapterTitles = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    // Warning surpressed for smoother UX
   }
-}
 
-export async function generateStory(input: GenerationRequest) {
-  const maxRetries = 2;
-  let lastError: any = null;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const genAI = getGenAI();
-      // Use gemini-2.5-flash (available on free tier: 5 RPM, 20 RPD)
-      // Free tier limits: 5 requests/min, 250K tokens/min, 20 requests/day
-      const model = genAI.getGenerativeModel({ model: 'models/gemini-2.5-flash' });
-
-      const prompt = createStoryPrompt(input);
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
-
-      const story = parseStoryResponse(text);
-      return story;
-    } catch (error: any) {
-      lastError = error;
-      
-      // If it's a quota/rate limit error, wait and retry
-      if (error.status === 429 && attempt < maxRetries) {
-        const retryDelay = error.errorDetails?.find((d: any) => d['@type']?.includes('RetryInfo'))?.retryDelay;
-        const delaySeconds = retryDelay ? parseFloat(retryDelay.replace('s', '')) : Math.pow(2, attempt) * 5;
-        
-        console.warn(`Quota exceeded. Retrying in ${delaySeconds} seconds... (attempt ${attempt + 1}/${maxRetries + 1})`);
-        await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
-        continue;
+  // Assign titles
+  let chapterIndex = 0;
+  for (const page of magazine.pages) {
+    if (page.type === 'CHAPTER') {
+      if (chapterTitles[chapterIndex]) {
+        page.title = chapterTitles[chapterIndex];
       }
-      
-      // For other errors or max retries reached, break and fallback
-      break;
+      chapterIndex++;
     }
   }
+  magazine.title = chapterTitles[0] ? chapterTitles[0] : magazine.title;
 
-  // Fallback to mock data if API fails after retries
-  console.warn('Falling back to mock story generation after', maxRetries + 1, 'attempts');
-  if (lastError) {
-    console.error('Last error:', lastError.status === 429 ? 'Quota exceeded' : lastError.message);
+
+  // 3. Generate Text for ALL pages in ONE go to respect rate limits (5 RPM)
+  const contentPrompt = `You are the Editor-in-Chief. Write the full text content for a ${pages.length}-page magazine about "${input.theme}" in ${input.language || 'English'}.
+    
+    Structure:
+    ${pages.map(p => `- Page ${p.pageNumber} (${p.type})`).join('\n')}
+
+    Audience: ${input.age} years old. Genre: ${input.genre}. Keywords: ${input.keywords}. Language: ${input.language || 'English'}.
+    
+    Requirements:
+    - Write ALL content in ${input.language || 'English'}.
+    - Cover: Catchy tagline.
+    - Editor's Note: Welcoming, ~100 words. (If present)
+    - TOC: (Skip).
+    - Introduction: Engaging, ~300 words.
+    - Chapters: ~500 words each. Educational & Fun.
+    - Summary: Key takeaways.
+    - Back Cover: (Skip).
+
+    RETURN ONLY A VALID JSON OBJECT mapping page numbers to an object containing 'title', 'content', 'layout', and 'image_prompt', like this:
+    {
+      "1": { 
+        "title": "Localized Title", 
+        "content": "Tagline here",
+        "layout": "full-image",
+        "image_prompt": "A futuristic city skyline at sunset, cyberpunk style"
+      },
+      "2": { 
+        "title": "Editor's Note (Language)", 
+        "content": "Editor note text...",
+        "layout": "simple-text",
+        "image_prompt": "Portrait of a friendly editor writing at a desk" 
+      },
+      ...
+    }
+    
+    Layout Options (Choose wisely for variety):
+    - 'simple-text': Valid for Editor's Note, Summary.
+    - 'image-right': Standard chapter layout.
+    - 'image-left': Varied chapter layout.
+    - 'image-top': Good for introductions.
+    - 'full-image': Use for Cover and highly visual chapters.
+    - 'quote-break': Short chapters with impactful quotes.
+
+    The 'title' field MUST match the section type but translated to the target language.
+    'image_prompt' MUST be a visual description in English for an image generator (no text in image).
+    Do NOT include markdown formatting or ANY other text. Just raw JSON.`;
+
+  try {
+    console.log("Generating full magazine content in one batch...");
+    const result = await model.generateContent(contentPrompt);
+    const text = result.response.text().trim().replace(/```json/g, '').replace(/```/g, '');
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const generatedContent = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(text);
+
+    // Assign content to pages
+    for (const page of magazine.pages) {
+      if (page.type === 'CONTENTS') {
+        page.content = JSON.stringify(magazine.pages.filter(p => p.type === 'CHAPTER').map(p => ({ page: p.pageNumber, title: p.title })));
+      } else if (page.type === 'BACK_COVER') {
+        // No text
+      } else {
+        // Use generated content or fallback
+        const pageKey = page.pageNumber.toString();
+        const genPage = generatedContent[pageKey];
+        if (typeof genPage === 'object' && genPage.content) {
+          page.content = genPage.content;
+          if (genPage.title) page.title = genPage.title;
+          if (genPage.layout) page.layout = genPage.layout;
+          if (genPage.image_prompt) page.imagePrompt = genPage.image_prompt;
+        } else if (typeof genPage === 'string') {
+          page.content = genPage;
+          page.layout = 'simple-text';
+        } else {
+          page.content = "Content generation failed.";
+          page.layout = 'simple-text';
+        }
+      }
+
+      // Generate Image URL (Local/Seed based - no API call)
+      // Use imagePrompt if available for better semantic binding
+      if (page.type === 'COVER' || page.type === 'CHAPTER' || page.type === 'INTRODUCTION' || (page.imagePrompt && page.layout !== 'simple-text')) {
+        const seedSource = page.imagePrompt || page.title || input.theme + page.pageNumber;
+        const seed = seedSource.replace(/[^a-z0-9]/gi, '-');
+        page.image = `https://picsum.photos/seed/${seed}/800/1200`;
+      }
+    }
+
+  } catch (error) {
+    console.error("Failed to generate batch content", error);
+    // Fallback for demo
+    magazine.pages.forEach(p => {
+      if (!p.content && p.type !== 'BACK_COVER' && p.type !== 'CONTENTS') {
+        p.content = "Content temporarily unavailable due to high load. Please try again.";
+        // Ensure image generation even if text fails
+        const seed = (p.title || input.theme + p.pageNumber).replace(/[^a-z0-9]/gi, '-');
+        p.image = `https://picsum.photos/seed/${seed}/800/1200`;
+      }
+    });
   }
-  
+
+  // Return backward compatible structure
+  // We assume the caller handles the new structure, but let's fit it into GeneratedContent
+  // The caller (route) expects { title, introduction, main_story, ... }
+
+  // We will serialize the ENTIRE magazine structure into 'main_story' 
+  // and provide summaries for other fields.
+  const introPage = magazine.pages.find(p => p.type === 'INTRODUCTION');
+  const summaryPage = magazine.pages.find(p => p.type === 'SUMMARY');
+  const allImages = magazine.pages.filter(p => p.image).map(p => p.image!);
+
   return {
-    title: `${input.genre} tale: ${input.theme}`,
-    introduction: `A tailored magazine story for a ${input.age}-year-old reader set in a ${input.genre.toLowerCase()} world.`,
-    main_story: `In a realm of ${input.theme.toLowerCase()}, characters embark on a journey around ${input.keywords}. With each step they learn courage and empathy.`,
-    character_highlights: `Key characters embody the keywords: ${input.keywords}. They mirror the reader's curiosity and kindness.`,
-    conclusion: `The adventure ends with a gentle lesson suited for ${input.language} readers, celebrating growth and imagination.`
+    title: magazine.title,
+    introduction: introPage?.content || "Welcome to your magazine.",
+    main_story: JSON.stringify(magazine), // KEY: Storing the whole structure here!
+    character_highlights: summaryPage?.content || "",
+    conclusion: "End of Magazine",
+    images: allImages // Return explicit images array for route
   };
 }
 
+// Kept for signature compatibility but effectively unused if main flow changes
 export async function generateImages(input: GenerationRequest) {
-  const maxRetries = 1; // Only 1 retry for images since they're less critical
-  let lastError: any = null;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      // Use Gemini to generate image search prompts based on the story theme
-      // Using gemini-2.5-flash (available on free tier)
-      const genAI = getGenAI();
-      const model = genAI.getGenerativeModel({ model: 'models/gemini-2.5-flash' });
-
-    const imagePrompt = `Generate 2-3 specific, child-friendly image search keywords/phrases for a ${input.age}-year-old's ${input.genre} story about ${input.theme}. 
-    
-Keywords to incorporate: ${input.keywords}
-Age: ${input.age} (must be age-appropriate)
-Genre: ${input.genre}
-Theme: ${input.theme}
-
-Return ONLY a JSON array of 2-3 search phrases (no other text), like:
-["search phrase 1", "search phrase 2", "search phrase 3"]
-
-Make the phrases specific, positive, and suitable for children. Focus on the main visual elements of the story.`;
-
-    const result = await model.generateContent(imagePrompt);
-    const response = await result.response;
-    const text = response.text().trim();
-
-    // Parse the search phrases from Gemini
-    let searchPhrases: string[] = [];
-    try {
-      // Try to extract JSON array
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        searchPhrases = JSON.parse(jsonMatch[0]);
-      } else {
-        // Fallback: split by lines or commas
-        searchPhrases = text
-          .replace(/["\[\]]/g, '')
-          .split(/[,\n]/)
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0)
-          .slice(0, 3);
-      }
-    } catch (error) {
-      console.warn('Failed to parse image search phrases, using fallback:', error);
-      // Fallback search phrases based on input
-      searchPhrases = [
-        `${input.theme} ${input.genre} illustration`,
-        `${input.keywords} children story`,
-        `${input.genre} adventure illustration`
-      ].slice(0, 2);
-    }
-
-    // Generate image URLs using reliable free image services
-    const imageUrls: string[] = [];
-    
-    // Create unique seeds based on search phrases for consistent images
-    for (let i = 0; i < 2; i++) {
-      try {
-        const phrase = searchPhrases[i] || searchPhrases[0] || `${input.theme} ${input.genre}`;
-        
-        // Create a consistent seed from the phrase
-        const seed = phrase
-          .toLowerCase()
-          .replace(/[^a-z0-9\s]/g, '')
-          .replace(/\s+/g, '-')
-          .substring(0, 50); // Limit length
-        
-        // Use multiple reliable image services as fallbacks
-        // Primary: Picsum Photos (very reliable)
-        const imageId = Math.abs(phrase.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % 1000;
-        const imageUrl = `https://picsum.photos/seed/${seed}-${imageId}/1200/800`;
-        imageUrls.push(imageUrl);
-        
-        console.log(`Generated image URL ${i + 1} for phrase: "${phrase}" -> ${imageUrl}`);
-      } catch (error) {
-        console.warn(`Failed to generate image URL ${i + 1}:`, error);
-        // Fallback
-        const fallbackSeed = `${input.theme}-${input.genre}-${i}`.replace(/\s+/g, '-').toLowerCase();
-        imageUrls.push(`https://picsum.photos/seed/${fallbackSeed}/1200/800`);
-      }
-    }
-
-    // Ensure we have exactly 2 images
-    if (imageUrls.length < 2) {
-      for (let i = imageUrls.length; i < 2; i++) {
-        const fallbackSeed = `${input.theme}-fallback-${i}`.replace(/\s+/g, '-').toLowerCase();
-        imageUrls.push(`https://picsum.photos/seed/${fallbackSeed}/1200/800`);
-      }
-    }
-
-      console.log(`Returning ${imageUrls.length} image URLs:`, imageUrls);
-      return imageUrls.slice(0, 2); // Return exactly 2 images
-    } catch (error: any) {
-      lastError = error;
-      
-      // If it's a quota/rate limit error, wait and retry
-      if (error.status === 429 && attempt < maxRetries) {
-        const retryDelay = error.errorDetails?.find((d: any) => d['@type']?.includes('RetryInfo'))?.retryDelay;
-        const delaySeconds = retryDelay ? parseFloat(retryDelay.replace('s', '')) : 30;
-        
-        console.warn(`Image generation quota exceeded. Retrying in ${delaySeconds} seconds... (attempt ${attempt + 1}/${maxRetries + 1})`);
-        await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
-        continue;
-      }
-      
-      // For other errors or max retries reached, break and fallback
-      break;
-    }
-  }
-
-  // Fallback to Picsum Photos with theme-based seeds if API fails
-  console.warn('Falling back to theme-based images after', maxRetries + 1, 'attempts');
-  if (lastError) {
-    console.error('Last error:', lastError.status === 429 ? 'Quota exceeded' : lastError.message);
-  }
-  
-  const themeSeed = `${input.theme}-${input.genre}`.replace(/\s+/g, '-');
-  const keywordSeed = input.keywords.replace(/\s+/g, '-');
-  
-  return [
-    `https://picsum.photos/seed/${themeSeed}-1/1200/800`,
-    `https://picsum.photos/seed/${keywordSeed}-2/1200/800`
-  ];
+  // This is now handled inside generateStory to align images with pages
+  return [];
 }
 
 export function isUnsafe(text: string) {
@@ -270,13 +244,8 @@ export function isUnsafe(text: string) {
 }
 
 export async function moderateOutput(sections: Record<string, string>, retries = 2) {
-  let attempts = 0;
-  while (attempts <= retries) {
-    const unsafe = Object.values(sections).some((s) => isUnsafe(s));
-    if (!unsafe) return sections;
-    attempts += 1;
-    if (attempts > retries) throw new Error('Content rejected. Please revise your inputs.');
-  }
-  throw new Error('Content rejected. Please revise your inputs.');
+  // Simplified moderation for the new structure
+  const unsafe = Object.values(sections).some((s) => isUnsafe(s || ''));
+  if (unsafe) throw new Error('Content rejected. Please revise your inputs.');
+  return sections;
 }
-

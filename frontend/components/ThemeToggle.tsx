@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-export function ThemeToggle() {
+export function ThemeToggle({ showLabel = false, className = '' }: { showLabel?: boolean; className?: string }) {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [mounted, setMounted] = useState(false);
 
@@ -11,7 +11,7 @@ export function ThemeToggle() {
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const initialTheme = savedTheme || (prefersDark ? 'dark' : 'light');
-    
+
     setTheme(initialTheme);
     updateTheme(initialTheme);
     setMounted(true);
@@ -39,11 +39,12 @@ export function ThemeToggle() {
     // Return a placeholder to prevent hydration mismatch
     return (
       <button
-        className="flex items-center justify-center size-10 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-text-main-light dark:text-white transition-colors"
+        className={`flex items-center gap-3 ${showLabel ? 'w-full px-4 py-3 rounded-lg hover:bg-background-light dark:hover:bg-background-dark/50' : 'justify-center size-10 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800'} text-text-main-light dark:text-white transition-colors ${className}`}
         aria-label="Toggle theme"
         disabled
       >
         <span className="material-symbols-outlined text-xl">dark_mode</span>
+        {showLabel && <span className="font-medium">Dark Mode</span>}
       </button>
     );
   }
@@ -51,7 +52,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className="flex items-center justify-center size-10 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-text-main-light dark:text-white transition-colors"
+      className={`flex items-center gap-3 ${showLabel ? 'w-full px-4 py-3 rounded-lg hover:bg-background-light dark:hover:bg-background-dark/50' : 'justify-center size-10 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800'} text-text-main-light dark:text-white transition-colors ${className}`}
       aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
       title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
     >
@@ -60,6 +61,7 @@ export function ThemeToggle() {
       ) : (
         <span className="material-symbols-outlined text-xl">light_mode</span>
       )}
+      {showLabel && <span className="font-medium">{theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>}
     </button>
   );
 }

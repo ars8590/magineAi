@@ -1,16 +1,27 @@
-import "dotenv/config";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import dotenv from "dotenv";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// ✅ dotenv MUST be loaded first
+dotenv.config();
 
-console.log("Loaded KEY:", process.env.GEMINI_API_KEY);
+import OpenAI from "openai";
 
-const model = genAI.getGenerativeModel({ model: "gemini-1.0-pro-latest" });
-// If "gemini-pro" fails, try: "gemini-1.0-pro" or "gemini-1.0-pro-latest"
+console.log("USING DOTENV METHOD");
+console.log("OPENROUTER KEY =", process.env.OPENROUTER_API_KEY);
 
-try {
-  const r = await model.generateContent("Say hello in Malayalam.");
-  console.log("MODEL RESPONSE:", r.response.text());
-} catch (e) {
-  console.error("MODEL ERROR:", e.toString());
+const client = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+});
+
+async function test() {
+  const res = await client.chat.completions.create({
+    model: "deepseek/deepseek-r1",
+    messages: [
+      { role: "user", content: "Write one Malayalam sentence about Kerala." }
+    ],
+  });
+
+  console.log(res.choices[0].message.content);
 }
+
+test();

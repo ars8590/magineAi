@@ -16,3 +16,22 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  if (!header) return res.status(401).json({ message: 'Missing Authorization header' });
+  const token = header.replace('Bearer ', '');
+  try {
+    const payload = jwt.verify(token, config.jwtSecret) as { role: string; sub: string };
+    if (payload.role === 'admin') {
+      res.locals.admin = payload;
+    } else if (payload.role === 'user') {
+      res.locals.user = { id: payload.sub };
+    } else {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    return next();
+  } catch {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+}
+

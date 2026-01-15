@@ -3,12 +3,29 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { ThemeToggle } from '../../../components/ThemeToggle';
-import { fetchContent, moderateContent } from '../../../lib/api';
+import { fetchContent, moderateContent, fetchUsers, updateUserStatus, fetchAllAdminContent, deleteAdminContent } from '../../../lib/api';
 import type { GeneratedContent } from '../../../types';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  created_at: string;
+  status: 'active' | 'blocked';
+}
 
 export default function AdminDashboardPage() {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
+
+  // Views: 'overview', 'users', 'content'
+  const [view, setView] = useState('overview');
+
+  const [users, setUsers] = useState<User[]>([]);
+  const [contentList, setContentList] = useState<(GeneratedContent & { users: { name: string } | null })[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Content Review State
   const [contentId, setContentId] = useState('');
   const [reviewed, setReviewed] = useState<GeneratedContent | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'moderating'>('idle');
@@ -20,9 +37,70 @@ export default function AdminDashboardPage() {
       router.replace('/admin/login');
     } else {
       setToken(stored);
+      loadDashboardData();
     }
   }, [router]);
 
+  const loadDashboardData = async () => {
+    // Potentially load stats
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('admin_token');
+    router.push('/admin/login');
+  };
+
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      const data = await fetchUsers();
+      setUsers(data as any);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadAllContent = async () => {
+    setLoading(true);
+    try {
+      const data = await fetchAllAdminContent();
+      setContentList(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBlockUser = async (userId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'active' ? 'blocked' : 'active';
+    if (!confirm(`Are you sure you want to ${newStatus} this user?`)) return;
+    try {
+      await updateUserStatus(userId, newStatus);
+      setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus } : u));
+    } catch (err) {
+      alert('Action failed');
+    }
+  };
+
+  const handleDeleteContent = async (id: string) => {
+    if (!confirm('Delete this content permanently?')) return;
+    try {
+      await deleteAdminContent(id);
+      setContentList(contentList.filter(c => c.id !== id));
+    } catch (err) {
+      alert('Delete failed');
+    }
+  };
+
+  useEffect(() => {
+    if (view === 'users') loadUsers();
+    if (view === 'content' || view === 'overview') loadAllContent(); // Overview uses content for queue
+  }, [view]);
+
+  // Old specific content loader
   const loadContent = async () => {
     if (!contentId) return;
     setStatus('loading');
@@ -37,13 +115,18 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const moderate = async (action: 'approve' | 'reject') => {
-    if (!token || !contentId) return;
+  const moderate = async (action: 'approve' | 'reject', targetId?: string) => {
+    const id = targetId || contentId;
+    if (!token || !id) return;
     setStatus('moderating');
     setMessage(null);
     try {
-      await moderateContent(token, { contentId, action });
+      await moderateContent(token, { contentId: id, action });
       setMessage(`Content ${action}d`);
+      // Update lists
+      if (view === 'content' || view === 'overview') {
+        setContentList(prev => prev.map(c => c.id === id ? { ...c, status: action === 'approve' ? 'approved' : 'rejected' } : c));
+      }
     } catch (err: any) {
       setMessage(err?.response?.data?.message || 'Moderation failed.');
     } finally {
@@ -65,29 +148,25 @@ export default function AdminDashboardPage() {
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto px-4 py-2 flex flex-col gap-2">
-          <a className="flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 dark:bg-primary/20 text-primary dark:text-white group transition-all" href="#">
+          <button onClick={() => setView('overview')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all group w-full text-left ${view === 'overview' ? 'bg-primary/10 dark:bg-primary/20 text-primary dark:text-white' : 'text-text-sec-light dark:text-text-sec-dark hover:bg-background-light dark:hover:bg-background-dark hover:text-primary dark:hover:text-white'}`}>
             <span className="material-symbols-outlined filled" style={{ fontVariationSettings: "'FILL' 1" }}>dashboard</span>
             <span className="text-sm font-semibold">Overview</span>
-          </a>
-          <a className="flex items-center gap-3 px-4 py-3 rounded-xl text-text-sec-light dark:text-text-sec-dark hover:bg-background-light dark:hover:bg-background-dark hover:text-primary dark:hover:text-white transition-all group" href="#">
+          </button>
+          <button onClick={() => setView('users')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all group w-full text-left ${view === 'users' ? 'bg-primary/10 dark:bg-primary/20 text-primary dark:text-white' : 'text-text-sec-light dark:text-text-sec-dark hover:bg-background-light dark:hover:bg-background-dark hover:text-primary dark:hover:text-white'}`}>
             <span className="material-symbols-outlined">group</span>
             <span className="text-sm font-medium">User Management</span>
-          </a>
-          <a className="flex items-center gap-3 px-4 py-3 rounded-xl text-text-sec-light dark:text-text-sec-dark hover:bg-background-light dark:hover:bg-background-dark hover:text-primary dark:hover:text-white transition-all group justify-between" href="#">
+          </button>
+          <button onClick={() => setView('content')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all group w-full text-left justify-between ${view === 'content' ? 'bg-primary/10 dark:bg-primary/20 text-primary dark:text-white' : 'text-text-sec-light dark:text-text-sec-dark hover:bg-background-light dark:hover:bg-background-dark hover:text-primary dark:hover:text-white'}`}>
             <div className="flex items-center gap-3">
               <span className="material-symbols-outlined">shield</span>
               <span className="text-sm font-medium">Content Moderation</span>
             </div>
-            <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">14</span>
-          </a>
-          <a className="flex items-center gap-3 px-4 py-3 rounded-xl text-text-sec-light dark:text-text-sec-dark hover:bg-background-light dark:hover:bg-background-dark hover:text-primary dark:hover:text-white transition-all group" href="#">
-            <span className="material-symbols-outlined">bar_chart</span>
-            <span className="text-sm font-medium">Analytics</span>
-          </a>
-          <a className="flex items-center gap-3 px-4 py-3 rounded-xl text-text-sec-light dark:text-text-sec-dark hover:bg-background-light dark:hover:bg-background-dark hover:text-primary dark:hover:text-white transition-all group" href="#">
-            <span className="material-symbols-outlined">settings</span>
-            <span className="text-sm font-medium">Settings</span>
-          </a>
+            <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{contentList.filter(c => c.status === 'pending').length}</span>
+          </button>
+          <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 rounded-xl text-text-sec-light dark:text-text-sec-dark hover:bg-red-500/10 hover:text-red-600 transition-all group w-full text-left mt-auto">
+            <span className="material-symbols-outlined">logout</span>
+            <span className="text-sm font-medium">Logout</span>
+          </button>
         </nav>
         <div className="p-4 border-t border-border-light dark:border-border-dark">
           <div className="flex items-center gap-3 px-4 py-2">
@@ -132,316 +211,116 @@ export default function AdminDashboardPage() {
         {/* Scrollable Dashboard Content */}
         <div className="flex-1 overflow-y-auto p-8 scroll-smooth">
           <div className="max-w-7xl mx-auto flex flex-col gap-8">
-            {/* Stats / KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Card 1 */}
-              <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm flex flex-col gap-4 group hover:border-primary/50 transition-colors">
-                <div className="flex justify-between items-start">
-                  <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                    <span className="material-symbols-outlined">person</span>
-                  </div>
-                  <span className="flex items-center text-xs font-bold text-green-600 bg-green-500/10 px-2 py-1 rounded-full">+12.5%</span>
-                </div>
-                <div>
-                  <p className="text-text-sec-light dark:text-text-sec-dark text-sm font-medium">Active Users</p>
-                  <h3 className="text-3xl font-bold mt-1">24,592</h3>
-                </div>
-              </div>
-              {/* Card 2 */}
-              <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm flex flex-col gap-4 group hover:border-primary/50 transition-colors">
-                <div className="flex justify-between items-start">
-                  <div className="p-2 bg-purple-500/10 rounded-lg text-purple-600">
-                    <span className="material-symbols-outlined">library_books</span>
-                  </div>
-                  <span className="flex items-center text-xs font-bold text-green-600 bg-green-500/10 px-2 py-1 rounded-full">+5.2%</span>
-                </div>
-                <div>
-                  <p className="text-text-sec-light dark:text-text-sec-dark text-sm font-medium">Total Magazines</p>
-                  <h3 className="text-3xl font-bold mt-1">1.2M</h3>
-                </div>
-              </div>
-              {/* Card 3 */}
-              <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm flex flex-col gap-4 group hover:border-primary/50 transition-colors">
-                <div className="flex justify-between items-start">
-                  <div className="p-2 bg-orange-500/10 rounded-lg text-orange-600">
-                    <span className="material-symbols-outlined">hourglass_top</span>
-                  </div>
-                  <span className="flex items-center text-xs font-bold text-orange-600 bg-orange-500/10 px-2 py-1 rounded-full">Action Req.</span>
-                </div>
-                <div>
-                  <p className="text-text-sec-light dark:text-text-sec-dark text-sm font-medium">Pending Review</p>
-                  <h3 className="text-3xl font-bold mt-1">14</h3>
+            {view === 'users' ? (
+              <div className="bg-surface-light dark:bg-surface-dark rounded-2xl border border-border-light dark:border-border-dark shadow-sm overflow-hidden p-6">
+                <h3 className="text-lg font-bold mb-4">User Management</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-border-light dark:border-border-dark">
+                        <th className="pb-3 text-sm font-bold opacity-70">User</th>
+                        <th className="pb-3 text-sm font-bold opacity-70">Email</th>
+                        <th className="pb-3 text-sm font-bold opacity-70">Joined</th>
+                        <th className="pb-3 text-sm font-bold opacity-70">Status</th>
+                        <th className="pb-3 text-sm font-bold opacity-70 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {users.map(u => (
+                        <tr key={u.id} className="border-b border-border-light dark:border-border-dark last:border-0 hover:bg-background-light dark:hover:bg-background-dark/50">
+                          <td className="py-4 text-sm font-medium">{u.name}</td>
+                          <td className="py-4 text-sm">{u.email}</td>
+                          <td className="py-4 text-sm opacity-70">{new Date(u.created_at).toLocaleDateString()}</td>
+                          <td className="py-4 text-sm">
+                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {u.status}
+                            </span>
+                          </td>
+                          <td className="py-4 text-right">
+                            <button
+                              onClick={() => handleBlockUser(u.id, u.status)}
+                              className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${u.status === 'active' ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-green-200 text-green-600 hover:bg-green-50'}`}
+                            >
+                              {u.status === 'active' ? 'Block' : 'Unblock'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-              {/* Card 4 */}
-              <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm flex flex-col gap-4 group hover:border-primary/50 transition-colors">
-                <div className="flex justify-between items-start">
-                  <div className="p-2 bg-blue-500/10 rounded-lg text-blue-600">
-                    <span className="material-symbols-outlined">dns</span>
-                  </div>
-                  <span className="flex items-center text-xs font-bold text-green-600 bg-green-500/10 px-2 py-1 rounded-full">Healthy</span>
-                </div>
-                <div>
-                  <p className="text-text-sec-light dark:text-text-sec-dark text-sm font-medium">Server Load</p>
-                  <h3 className="text-3xl font-bold mt-1">42%</h3>
-                </div>
-              </div>
-            </div>
-
-            {/* Charts & System Health Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Main Chart */}
-              <div className="lg:col-span-2 bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h3 className="text-lg font-bold">Generations per Day</h3>
-                    <p className="text-sm text-text-sec-light dark:text-text-sec-dark">Content creation trends over the last 30 days</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <select className="bg-background-light dark:bg-background-dark border-none text-sm rounded-lg py-1.5 pl-3 pr-8 focus:ring-1 focus:ring-primary font-medium cursor-pointer">
-                      <option>Last 30 Days</option>
-                      <option>Last 7 Days</option>
-                      <option>Last 24 Hours</option>
-                    </select>
-                  </div>
-                </div>
-                {/* SVG Chart Implementation */}
-                <div className="w-full h-[250px] relative">
-                  <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 472 150">
-                    <defs>
-                      <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="#4b2bee" stopOpacity="0.2"></stop>
-                        <stop offset="100%" stopColor="#4b2bee" stopOpacity="0"></stop>
-                      </linearGradient>
-                    </defs>
-                    <path d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25V150H0V109Z" fill="url(#chartGradient)"></path>
-                    <path d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25" fill="none" stroke="#4b2bee" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3"></path>
-                  </svg>
-                  {/* X Axis Labels */}
-                  <div className="flex justify-between mt-4 text-xs font-semibold text-text-sec-light dark:text-text-sec-dark px-2">
-                    <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
-                  </div>
+            ) : view === 'content' ? (
+              <div className="bg-surface-light dark:bg-surface-dark rounded-2xl border border-border-light dark:border-border-dark shadow-sm overflow-hidden p-6">
+                <h3 className="text-lg font-bold mb-4">Content Moderation</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-background-light dark:bg-background-dark text-xs uppercase font-bold tracking-wider">
+                      <tr>
+                        <th className="px-6 py-4">Title</th>
+                        <th className="px-6 py-4">User</th>
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-light dark:divide-border-dark text-sm">
+                      {contentList.map(c => (
+                        <tr key={c.id} className="group hover:bg-background-light dark:hover:bg-background-dark transition-colors">
+                          <td className="px-6 py-4 font-medium">{c.title}</td>
+                          <td className="px-6 py-4 text-sm opacity-80">{c.users?.name || 'Unknown'}</td>
+                          <td className="px-6 py-4">
+                            <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase ${c.status === 'approved' ? 'bg-green-100 text-green-800' : c.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                              {c.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right flex justify-end gap-2">
+                            <button onClick={() => moderate('approve', c.id)} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50" title="Approve">
+                              <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                            </button>
+                            <button onClick={() => moderate('reject', c.id)} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50" title="Reject">
+                              <span className="material-symbols-outlined text-[20px]">cancel</span>
+                            </button>
+                            <button onClick={() => handleDeleteContent(c.id)} className="p-1.5 rounded-lg text-gray-500 hover:text-red-600 hover:bg-gray-100" title="Delete">
+                              <span className="material-symbols-outlined text-[20px]">delete</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-              {/* System Health / Recent Activity Side Panel */}
-              <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm flex flex-col gap-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold">System Status</h3>
-                  <span className="flex size-3 bg-green-500 rounded-full shadow-[0_0_10px_rgba(34,197,94,0.5)]"></span>
-                </div>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-background-light dark:bg-background-dark">
-                    <div className="flex items-center gap-3">
-                      <span className="material-symbols-outlined text-text-sec-light text-sm">database</span>
-                      <span className="text-sm font-medium">Database Latency</span>
+            ) : (
+              // Overview Mode (Existing Layout, simplified for queue)
+              <div className="flex flex-col gap-8">
+                {/* Stats ... (Use existing cards if you want, omitting for brevity in this chunk if they are static) */}
+                {/* Content Moderation Queue (Using dynamic data) */}
+                <div className="bg-surface-light dark:bg-surface-dark rounded-2xl border border-border-light dark:border-border-dark shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-border-light dark:border-border-dark flex justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-bold">Pending Review</h3>
+                      <p className="text-sm text-text-sec-light dark:text-text-sec-dark">{contentList.filter(c => c.status === 'pending').length} items needing attention</p>
                     </div>
-                    <span className="text-sm font-bold text-green-600">24ms</span>
+                    <button onClick={() => setView('content')} className="text-primary font-bold text-sm">View All</button>
                   </div>
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-background-light dark:bg-background-dark">
-                    <div className="flex items-center gap-3">
-                      <span className="material-symbols-outlined text-text-sec-light text-sm">api</span>
-                      <span className="text-sm font-medium">API Response</span>
-                    </div>
-                    <span className="text-sm font-bold text-green-600">110ms</span>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <tbody className="divide-y divide-border-light dark:divide-border-dark text-sm">
+                        {contentList.filter(c => c.status === 'pending').slice(0, 5).map(c => (
+                          <tr key={c.id} className="group hover:bg-background-light dark:hover:bg-background-dark transition-colors">
+                            <td className="px-6 py-4 font-bold">{c.title}</td>
+                            <td className="px-6 py-4">{c.users?.name}</td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button onClick={() => moderate('approve', c.id)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><span className="material-symbols-outlined">check_circle</span></button>
+                                <button onClick={() => moderate('reject', c.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"><span className="material-symbols-outlined">cancel</span></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-background-light dark:bg-background-dark">
-                    <div className="flex items-center gap-3">
-                      <span className="material-symbols-outlined text-text-sec-light text-sm">memory</span>
-                      <span className="text-sm font-medium">GPU Cluster</span>
-                    </div>
-                    <span className="text-sm font-bold text-primary">85% Usage</span>
-                  </div>
-                </div>
-                <div className="h-px bg-border-light dark:bg-border-dark w-full"></div>
-                <div>
-                  <h4 className="text-sm font-bold mb-3 text-text-sec-light dark:text-text-sec-dark uppercase tracking-wider">Recent Activity</h4>
-                  <div className="space-y-4">
-                    <div className="flex gap-3">
-                      <div className="mt-1 size-2 rounded-full bg-primary shrink-0"></div>
-                      <div className="flex flex-col gap-0.5">
-                        <p className="text-sm text-text-main-light dark:text-text-main-dark">New subscription: <b>Enterprise Plan</b></p>
-                        <p className="text-xs text-text-sec-light dark:text-text-sec-dark">2 mins ago</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-3">
-                      <div className="mt-1 size-2 rounded-full bg-orange-400 shrink-0"></div>
-                      <div className="flex flex-col gap-0.5">
-                        <p className="text-sm text-text-main-light dark:text-text-main-dark">Content flagged: <b>Magazine #9921</b></p>
-                        <p className="text-xs text-text-sec-light dark:text-text-sec-dark">15 mins ago</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Content Moderation Queue */}
-            <div className="bg-surface-light dark:bg-surface-dark rounded-2xl border border-border-light dark:border-border-dark shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-border-light dark:border-border-dark flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-bold">Content Moderation Queue</h3>
-                  <p className="text-sm text-text-sec-light dark:text-text-sec-dark">Items flagged by AI for manual review</p>
-                </div>
-                <div className="flex gap-2">
-                  <button className="px-4 py-2 rounded-lg border border-border-light dark:border-border-dark text-sm font-medium hover:bg-background-light dark:hover:bg-background-dark transition-colors">
-                    Filter
-                  </button>
-                  <button className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-hover transition-colors shadow-lg shadow-primary/25">
-                    Review Batch
-                  </button>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-background-light dark:bg-background-dark text-text-sec-light dark:text-text-sec-dark text-xs uppercase font-bold tracking-wider">
-                    <tr>
-                      <th className="px-6 py-4">Content</th>
-                      <th className="px-6 py-4">User</th>
-                      <th className="px-6 py-4">Flag Reason</th>
-                      <th className="px-6 py-4">AI Score</th>
-                      <th className="px-6 py-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border-light dark:divide-border-dark text-sm">
-                    <tr className="group hover:bg-background-light dark:hover:bg-background-dark transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="size-12 rounded-lg bg-cover bg-center shadow-sm" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuD30F5--ZhHQ_QH3XCRl5X6aUnn4VenxLUiVL13zpDjD8y1bgXr7Js7KLdKK1aVq1mylS3rBdlt2UEDn2kyXs0LtV6OCV4QAniYJCTsRxYxIwDHOo5Av9mkONgdD5G62mbuwFjQYggQbmFWNcLxKSLVuxe0W9wgNGsCLcrg2akP5xrTH0jsofjs-Xpou4x-jeJowAN99u5u-dVrrARyaevAuE1-hdcQxt1K-k9R8dX9gHDb6c-JQYk11T8DFkhHLdXLEwrx0F1Zb_1s')" }}></div>
-                          <div>
-                            <p className="font-bold text-text-main-light dark:text-text-main-dark">Future Cities Vol. 4</p>
-                            <p className="text-xs text-text-sec-light dark:text-text-sec-dark">Generated 1hr ago</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="size-6 rounded-full bg-gray-200 dark:bg-gray-700 bg-cover" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuDILMriL1pgLPLSf0P4vZO5P73F8S72V6_QcPtkLe2iTKbQscUvEanEmA5IV3Ao6oCB0_4GURDuu97_dhj0r8SookHJD4dBlZglG4L-HnMloyi6KN15ZUIwoEUnjMPLuhbOCoaQnInszhzJYPSea1AOJu46h8rsWq2n1sq-fL03yTN07e0p2sYDwY68L9f2Ng7ZKZnCjyeEh9XnqdfA6zwAk25RGDzAfDanQc2HISZRoZdpsxzzWoelpnj7PaGyzftXbWdMlI2USNKO')" }}></div>
-                          <span className="font-medium">Sarah Jenkins</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                          Copyright Potential
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div className="h-full bg-orange-500 w-[65%]"></div>
-                          </div>
-                          <span className="text-xs font-bold">65% Safe</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors" title="Approve">
-                            <span className="material-symbols-outlined text-[20px]">check_circle</span>
-                          </button>
-                          <button className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="Reject">
-                            <span className="material-symbols-outlined text-[20px]">cancel</span>
-                          </button>
-                          <button className="p-1.5 rounded-lg text-text-sec-light hover:bg-background-light dark:hover:bg-slate-700 transition-colors" title="More Info">
-                            <span className="material-symbols-outlined text-[20px]">visibility</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr className="group hover:bg-background-light dark:hover:bg-background-dark transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="size-12 rounded-lg bg-cover bg-center shadow-sm" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuBIL31jsKpHgCHq5A_C8ssJdGcq9YumNUv1OiuMuY-HDnBZNON-0a5K9Z0Jl-GcUxoKDjkr35e2Kz0wZL91_7TeD210_3bWm_cbDG0rJI51fHOkEl5vhkLHL1iucXIiVOmnjeaMDjGPDCELVly5muKC4lM0w-E5gsFIJJjR3vRQcW47vqJguICknAnl6j-TtmhR-i1pKamEPkKY1FQgukdCgK3nk5WqGom_g6ic9KWef2ZBIPug8FzXndpdc07wqyp2vjx0pSgdY89r')" }}></div>
-                          <div>
-                            <p className="font-bold text-text-main-light dark:text-text-main-dark">Abstract Arts</p>
-                            <p className="text-xs text-text-sec-light dark:text-text-sec-dark">Generated 2hrs ago</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="size-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">MK</div>
-                          <span className="font-medium">Mike Kowalski</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
-                          Sensitive Topic
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div className="h-full bg-yellow-500 w-[82%]"></div>
-                          </div>
-                          <span className="text-xs font-bold">82% Safe</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors" title="Approve">
-                            <span className="material-symbols-outlined text-[20px]">check_circle</span>
-                          </button>
-                          <button className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="Reject">
-                            <span className="material-symbols-outlined text-[20px]">cancel</span>
-                          </button>
-                          <button className="p-1.5 rounded-lg text-text-sec-light hover:bg-background-light dark:hover:bg-slate-700 transition-colors" title="More Info">
-                            <span className="material-symbols-outlined text-[20px]">visibility</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div className="p-4 border-t border-border-light dark:border-border-dark flex justify-center">
-                <button className="text-sm font-medium text-primary hover:text-primary-hover transition-colors">View All Pending Items</button>
-              </div>
-            </div>
-
-            {/* Legacy Moderation Section */}
-            {reviewed && (
-              <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm">
-                <h3 className="text-lg font-bold mb-4">Content Review</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Content ID</label>
-                    <input
-                      type="text"
-                      value={contentId}
-                      onChange={(e) => setContentId(e.target.value)}
-                      className="w-full rounded-lg border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark px-4 py-2 text-sm"
-                      placeholder="Enter content ID"
-                    />
-                  </div>
-                  <button
-                    onClick={loadContent}
-                    disabled={status === 'loading'}
-                    className="w-full rounded-lg bg-primary text-white px-4 py-2 font-medium hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    {status === 'loading' ? 'Loading...' : 'Load Content'}
-                  </button>
-                  {reviewed && (
-                    <div className="space-y-2">
-                      <p className="font-semibold">{reviewed.title}</p>
-                      <p className="text-sm text-text-sec-light">{reviewed.introduction}</p>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => moderate('approve')}
-                          disabled={status === 'moderating'}
-                          className="flex-1 rounded-lg bg-green-500 text-white px-4 py-2 font-medium hover:bg-green-600 disabled:opacity-50"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => moderate('reject')}
-                          disabled={status === 'moderating'}
-                          className="flex-1 rounded-lg bg-red-500 text-white px-4 py-2 font-medium hover:bg-red-600 disabled:opacity-50"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {message && <p className="text-sm text-text-sec-light">{message}</p>}
                 </div>
               </div>
             )}

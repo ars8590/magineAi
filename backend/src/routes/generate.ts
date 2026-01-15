@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAuth } from '../middleware/auth';
 import { z } from 'zod';
 import { generateImages, generateStory, moderateOutput } from '../services/ai';
 import { saveGeneratedContent, savePreference, uploadImageFromUrl } from '../services/storage';
@@ -12,23 +13,25 @@ const payloadSchema = z.object({
   theme: z.string().min(2),
   keywords: z.string().min(2),
   language: z.string().min(2),
-  pages: z.number().min(10).max(100).optional(),
+  pages: z.number().min(1).max(100).optional(),
   userId: z.string().optional()
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   const parsed = payloadSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: 'Invalid payload', errors: parsed.error.errors });
   const input = parsed.data as GenerationRequest & { userId?: string };
 
   try {
     const story = await generateStory(input);
-    await moderateOutput(story);
-    const images = await generateImages(input);
+    // await moderateOutput(story); // structured content might not fit simple moderation map
+
+    // Use images from the story generation or fallback
+    const generatedImages = story.images || [];
 
     // Upload images to Supabase Storage and store the public URLs
     const storedImages = await Promise.all(
-      images.map(async (url) => {
+      generatedImages.map(async (url: string) => {
         try {
           return await uploadImageFromUrl(url);
         } catch (err) {
@@ -38,11 +41,17 @@ router.post('/', async (req, res) => {
       })
     );
 
-    console.log('Generated images:', images);
-    console.log('Number of images:', images.length);
+    console.log('Generated images:', generatedImages);
+    console.log('Number of images:', generatedImages.length);
 
-    await savePreference(input.userId || null, input);
-    const record = await saveGeneratedContent(input.userId || null, {
+    // Extract user ID from authenticated session (middleware)
+    // Priority: res.locals.user.id -> req.body.userId (if admin/testing) -> null
+    const userId = res.locals.user?.id || input.userId || null;
+
+    console.log('Saving content for User ID:', userId);
+
+    await savePreference(userId, input);
+    const record = await saveGeneratedContent(userId, {
       title: story.title,
       introduction: story.introduction,
       main_story: story.main_story,

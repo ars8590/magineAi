@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   experimental: {
-    serverActions: true
+    // serverActions is true by default in Next.js 14
   },
   images: {
     remotePatterns: [

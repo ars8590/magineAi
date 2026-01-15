@@ -1,11 +1,94 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { LogoLink } from '../components/LogoLink';
+
+const showcaseItems = [
+  // Children's Books
+  {
+    category: "Children's Books",
+    title: 'The Lost Color',
+    author: 'By Sarah J.',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC9F8fZ0MX-iGJqSmH4EnOGXznJ5b9q6_zcWb01MiAVB0ZL_p0MRV4lhz2xO4h7PS5c-s2fxujdFQyHEuzY-RVpoHdlnlZllzfwKo4yRQyeU2Ow9hECt-z7T0EXs3BOjuGl3oLEWQOT1UKrHUoXng4N5ivl3ZisqSu0NoBh4FTu4DboGClBlPSKsHJQnqo5kQq74brVQPxouA6gD4c4zQJerishDykla8biGRUHOiavOjm4UnQeI4zhcLrjj1H4t1bddEipaSM971a7'
+  },
+  {
+    category: "Children's Books",
+    title: "Grandma's Attic",
+    author: 'By Mike T.',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBsWw8iYMe9U0bP0qz9z_PCGzvd0_n0nZu4pun4dcA53joReOA_iBH4GwqCkUdsbPyGz5FlGBQaij7fThNRvZqsNfeW4VG9HengpRo10kqOPSMxl6vTlmYi4c9oBl6rj_R_AVa7vkodsWrOztNRiaeCJrous2wk-6t7ssvK0FjfyD8zzP9QaPO-h3dSqPb6f-Ga5UL5c0KLo6SV2Pc-uctORflXj0fy998DNbLB3FuzpAGzNF8XinOrlog9t9cZkSTNcSdzhbe7SQxK'
+  },
+  {
+    category: "Children's Books",
+    title: 'Midnight Forest',
+    author: 'By Alex R.',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBZ_Y3YVI9D513xWIl7d_0m0U0ny-SSBsAM8y222a_pUtgoDq4-FX0fQsSJ0fAvYm6uln8sUqWwnvgXq4S-hhttNs-pAIKhWr_osTsoXj3zkib-fYGy27SkUxNvt8aM4gQjyZ1skaxw_AAHeAcawY-78KQtwZzDUVCtP4RvWZT2RGx3Vsz0KwiXDEZZ5XzXzxuVo8zAvu8St4NL5gXbUY0mdzW2pJVctus2kNUKi4N0etDJ6p8P0FHtu2ecJeYNtstF7R9vTdsCijHD'
+  },
+  {
+    category: "Children's Books",
+    title: 'Robo-Pal',
+    author: 'By Jenny W.',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAS28dgFtBc1UzUOgN9VnM_qRNgFriCnDtOcGBv01ZCVDre04S0zQZGSQqn8uCl-wpEky_97tJZoV536LHadLBQr9WaPdafZGJPVLIhRg0k21c77Q7Th-Ak7tS2mbxkj6V1Q_V2d-PoELhdr_y_VUq1LYw098jiLGyMBajoxqIGZpS3lOBCjkCpCaJGTT1f2VtCIdiN3pGIRAFbeGG8wKMAcHaXg78OaOi-EYMryWvurHLGWn23DAx6J_X8fYj_bYYUUcVYWJDS6Tts'
+  },
+  // Magazines
+  {
+    category: 'Magazines',
+    title: 'Tech Today',
+    author: 'Editor: Chris L.',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBXxtPpa0F-F3I5ybVv1TZ0nJ6c3N9pBpKBpdO9F4x3VvtWC_fCw0pv1qGNcdhIjYxdINurge6ruq8U0JUQcknS4Nq3sOaTwkKHSykDKjLAPE5tpOxTNOzLlTRjONdTtkTN1grRqkG68TRUJyIMl9QYpHCgroB15hKVCHc93PXE55ntMZAiPpYxAPEw0RU7rijtDuPYJ1HHY-S0tSE7NUdFTX5H9nIjjwtJ1-LNQJ5wYqVs_c7cT00a5m64coZiCWPgr-3_PnHQALbd'
+  },
+  {
+    category: 'Magazines',
+    title: 'Culinary Art',
+    author: 'Chef Mario',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB4RgcX6FoD_uoP_GQ6gPxDVXl5hc6LaAD9h03VzfFcLS_QpNIjRrRRnBXTL4yc8LWMTY7RFqxXtMnhYD_fllSJFJraKa3aAp3YadbobMans5EolLVo84tnEnW5o6M9JPV-q-tv1hC6jm-J63Q7Y2K2yC2sfLlPv4fNJwjKsuRWOsivLHZNECNJl4CyBxkDyQkzYp_i4SkIaRty04iZ_IslIOtX-DlnacxuX6NP3z0fjm13oxyPbGloSnzeKVJhFN6Uu0DkorVVKiVK'
+  },
+  {
+    category: 'Magazines',
+    title: 'Travel Weekly',
+    author: 'Wanderlust Inc.',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDNLhRSWE7oRhy6_Em-boOdWwTL1tYGsj8CZ3x2OUNQoyRkg1_ogTJlQaQ9wBcO3KttcTR4AQU3ldvNqqDDiIWfSPwCXIb0gbK1MPlg-99XM5ZerCm_k47MbibXMZBpgEUtYlUyoCyhCroLmNwo7aBgbYsLVgqUY8lpA4nrdwuC2iIZ7PRF596LY166T0td-AGNhxrlt6r8NRzr9q8XwatCqrrTCf2aBboxhSzeiQFpKecyKpEYxJsKKLTKE6RNgXgdJ86SkIhehMK9'
+  },
+  {
+    category: 'Magazines',
+    title: 'Future Living',
+    author: 'NextGen Media',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDozBUGz48t7JS5mA9-Ue16E5udDUV8T_7ifgu63EQYwEQ6qQ0TmyJQGwykKJ3Qjtr3NatWtjDIvDFgEFSI0H4EJN6LnhHS6vTwvLSVjH3HcIQR2rzbDVrRyt7acEZ_eL5P2FT9JH7LBz3xTezWE5twgBSqkcyx2RGsgum0xlrma4nYv-jvKMUrzvhGu3cb1637XFpaxL-Y8iG-88qJ_NjEfd_BCtAaeLAywWaBBn_3o9OK6kO093DvPVhK2pM-LcRSVHAV7PIR-NfB'
+  },
+  // Comics
+  {
+    category: 'Comics',
+    title: 'Space Ranger',
+    author: 'Action Comics',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAEO401bJHPrEuxVuV9-otRvDlejmZGTQjMPH1qvNO--OGuG0ZfhThWTyzZAIp_5Uwdj3aQXayf-RCJulMfO8vMkwIhHsDmDblSghauMpFd7AAHNHHIRuwUWy-KI0h7UtLriKCa0UtoV5YBfLgn9Y8iABdPk5vg-f0KzXOPUkpyWE6YI7x3OwXSd2igxH4rwrVMt9QVtHSR353xcUFnmYew7m9qjUExF2eKv_grCcs8e3_WfPqDLtYKZocs8sceIQ8cZpAjLjcNRt_H'
+  },
+  {
+    category: 'Comics',
+    title: 'Night Owl',
+    author: 'Dark City Press',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCKPY2U7YnZDCHo9YdY3YwV40MzcVeBz2viTaTj-2-8PF4bIPVW6WFeN1Rp9CWKChbKhU5aIx7O1WZ6sO6dVNbDBUT_1ojUmWTedZOSv3GL65mMHhGnC4OaqQ2bPWYL19iYpISFzQVm9q8eStPrXTmzdyz3WLcpLbh5X-ryKrRmXoDH1o1HiyxiiTPoNrthHpN-NNRsUafOER2YuMksGmw_9SFkzoZ9jvFUjGugBgIHrTfkQsMjzB9y0fd8nYzV_v8vosA4i9CsA8Ky'
+  },
+  {
+    category: 'Comics',
+    title: 'Super Academy',
+    author: 'Hero Works',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAZk2Fmwmn5nTmD2S9j5rc1-fkcD7zifD9pCezslfYC0LcF9aTnn7bMFcxjetEclvNWUvDtCqrN5gAO4VQOdAGXU2R5IYn4MZcIkZV2nyqet300lUqBpGeKmKD7-Ke0rQ4n2BlQ22f-08FFjYwJHvBT318-fjafE5t2C3kvOnKGlSL84JZ8mMMoAEEEHbvug5-TgJDTkV_4pW2fvTvn_NDr8BDuaguBCRJSuBf05-DG3mbQ7oSDddZefTns3XyBl4g87ljoXd0NzMfs'
+  },
+  {
+    category: 'Comics',
+    title: 'Alien Neighbor',
+    author: 'SciFi Fun',
+    img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDyw5AwXzjEBFTNApjDEMK0KK_nGS2ryYnt-c9h5IE1reYr822XalIfsE3QwvHOXDFmDOeexkhTuJmHYkTrKWbDv7of6jwaADJkTz7etNJPufmc4spKFq2ltCsZVYzBeSbmoXIqaW-J3RoLziAHGYA2HvhgC-4H0Le53wsMZZBqanZJhzILhXeC_FHhLxgPBg5o2zMPwSvf0i0c1H9VbW8yAq6GlWvh1DroaOPqGpoIZIq3AqkI5-pkerKPn8uzAA43PqGHdeqeyLTh'
+  }
+];
 
 export default function Home() {
   const router = useRouter();
+  const [activeCategory, setActiveCategory] = useState("Children's Books");
+
+  const filteredItems = showcaseItems.filter(item => item.category === activeCategory);
 
   return (
     <div className="bg-background-light dark:bg-background-dark text-text-main-light dark:text-white font-display overflow-x-hidden">
@@ -13,20 +96,22 @@ export default function Home() {
       <header className="sticky top-0 z-50 w-full bg-background-light/90 dark:bg-background-dark/90 backdrop-blur-md border-b border-border-light dark:border-gray-800">
         <div className="px-4 md:px-10 flex justify-center py-3">
           <div className="flex max-w-[1280px] flex-1 items-center justify-between">
+
             <div className="flex items-center gap-4 text-primary dark:text-white">
-              <div className="size-8 text-primary">
-                <span className="material-symbols-outlined" style={{ fontSize: '32px' }}>auto_stories</span>
-              </div>
-              <h2 className="text-text-main-light dark:text-white text-xl font-bold leading-tight tracking-[-0.015em]">MagineAI</h2>
+              <LogoLink className="flex items-center gap-4">
+                <div className="size-8 text-primary">
+                  <span className="material-symbols-outlined" style={{ fontSize: '32px' }}>auto_stories</span>
+                </div>
+                <h2 className="text-text-main-light dark:text-white text-xl font-bold leading-tight tracking-[-0.015em]">MagineAI</h2>
+              </LogoLink>
             </div>
             <div className="hidden md:flex flex-1 justify-end gap-8 items-center">
               <div className="flex items-center gap-9">
                 <a className="text-text-main-light dark:text-gray-300 hover:text-primary dark:hover:text-primary transition-colors text-sm font-medium leading-normal" href="#features">Features</a>
                 <a className="text-text-main-light dark:text-gray-300 hover:text-primary dark:hover:text-primary transition-colors text-sm font-medium leading-normal" href="#showcase">Showcase</a>
-                <a className="text-text-main-light dark:text-gray-300 hover:text-primary dark:hover:text-primary transition-colors text-sm font-medium leading-normal" href="#pricing">Pricing</a>
               </div>
               <ThemeToggle />
-              <Link href="/admin/login">
+              <Link href="/login">
                 <button className="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-6 bg-primary text-white hover:bg-primary/90 transition-all text-sm font-bold leading-normal tracking-[0.015em]">
                   <span className="truncate">Login</span>
                 </button>
@@ -55,7 +140,7 @@ export default function Home() {
               </h2>
             </div>
             <div className="flex flex-col sm:flex-row gap-4 pt-4">
-              <Link href="/create">
+              <Link href="/login">
                 <button className="flex items-center justify-center rounded-lg h-12 px-8 bg-primary text-white text-base font-bold hover:bg-primary/90 hover:scale-105 transition-all shadow-lg shadow-primary/25">
                   <span>Start Creating Now</span>
                   <span className="material-symbols-outlined ml-2 text-lg">arrow_forward</span>
@@ -227,19 +312,23 @@ export default function Home() {
             </div>
             {/* Tabs */}
             <div className="flex p-1 bg-white dark:bg-gray-800 rounded-lg border border-border-light dark:border-gray-700 w-full md:w-auto">
-              <button className="flex-1 md:flex-none py-2 px-4 text-sm font-bold rounded text-white bg-primary shadow-sm">Children's Books</button>
-              <button className="flex-1 md:flex-none py-2 px-4 text-sm font-medium rounded text-text-sub-light dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">Magazines</button>
-              <button className="flex-1 md:flex-none py-2 px-4 text-sm font-medium rounded text-text-sub-light dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">Comics</button>
+              {['Children\'s Books', 'Magazines', 'Comics'].map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setActiveCategory(category)}
+                  className={`flex-1 md:flex-none py-2 px-4 text-sm font-medium rounded transition-all ${activeCategory === category
+                    ? 'text-white bg-primary shadow-sm font-bold'
+                    : 'text-text-sub-light dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                >
+                  {category}
+                </button>
+              ))}
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Gallery Items */}
-            {[
-              { title: 'The Lost Color', author: 'By Sarah J.', img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC9F8fZ0MX-iGJqSmH4EnOGXznJ5b9q6_zcWb01MiAVB0ZL_p0MRV4lhz2xO4h7PS5c-s2fxujdFQyHEuzY-RVpoHdlnlZllzfwKo4yRQyeU2Ow9hECt-z7T0EXs3BOjuGl3oLEWQOT1UKrHUoXng4N5ivl3ZisqSu0NoBh4FTu4DboGClBlPSKsHJQnqo5kQq74brVQPxouA6gD4c4zQJerishDykla8biGRUHOiavOjm4UnQeI4zhcLrjj1H4t1bddEipaSM971a7' },
-              { title: "Grandma's Attic", author: 'By Mike T.', img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBsWw8iYMe9U0bP0qz9z_PCGzvd0_n0nZu4pun4dcA53joReOA_iBH4GwqCkUdsbPyGz5FlGBQaij7fThNRvZqsNfeW4VG9HengpRo10kqOPSMxl6vTlmYi4c9oBl6rj_R_AVa7vkodsWrOztNRiaeCJrous2wk-6t7ssvK0FjfyD8zzP9QaPO-h3dSqPb6f-Ga5UL5c0KLo6SV2Pc-uctORflXj0fy998DNbLB3FuzpAGzNF8XinOrlog9t9cZkSTNcSdzhbe7SQxK' },
-              { title: 'Midnight Forest', author: 'By Alex R.', img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBZ_Y3YVI9D513xWIl7d_0m0U0ny-SSBsAM8y222a_pUtgoDq4-FX0fQsSJ0fAvYm6uln8sUqWwnvgXq4S-hhttNs-pAIKhWr_osTsoXj3zkib-fYGy27SkUxNvt8aM4gQjyZ1skaxw_AAHeAcawY-78KQtwZzDUVCtP4RvWZT2RGx3Vsz0KwiXDEZZ5XzXzxuVo8zAvu8St4NL5gXbUY0mdzW2pJVctus2kNUKi4N0etDJ6p8P0FHtu2ecJeYNtstF7R9vTdsCijHD' },
-              { title: 'Robo-Pal', author: 'By Jenny W.', img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAS28dgFtBc1UzUOgN9VnM_qRNgFriCnDtOcGBv01ZCVDre04S0zQZGSQqn8uCl-wpEky_97tJZoV536LHadLBQr9WaPdafZGJPVLIhRg0k21c77Q7Th-Ak7tS2mbxkj6V1Q_V2d-PoELhdr_y_VUq1LYw098jiLGyMBajoxqIGZpS3lOBCjkCpCaJGTT1f2VtCIdiN3pGIRAFbeGG8wKMAcHaXg78OaOi-EYMryWvurHLGWn23DAx6J_X8fYj_bYYUUcVYWJDS6Tts' }
-            ].map((item, idx) => (
+            {filteredItems.map((item, idx) => (
               <div key={idx} className="group relative aspect-[3/4] rounded-xl overflow-hidden cursor-pointer shadow-md hover:shadow-xl transition-all">
                 <img className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-500" src={item.img} alt={item.title} />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
@@ -294,7 +383,7 @@ export default function Home() {
               <p className="text-white/80 text-lg md:text-xl font-medium">Join thousands of creators turning imagination into reality today. Start for free.</p>
             </div>
             <div className="relative z-10 flex flex-col gap-3 min-w-[200px]">
-              <Link href="/create">
+              <Link href="/signup">
                 <button className="flex items-center justify-center rounded-lg h-14 px-8 bg-white text-primary text-lg font-bold hover:bg-gray-100 transition-all shadow-lg">
                   Get Started Free
                 </button>
@@ -321,7 +410,6 @@ export default function Home() {
                 <h4 className="text-text-main-light dark:text-white font-bold">Product</h4>
                 <div className="flex flex-col gap-2">
                   <a className="text-text-sub-light dark:text-gray-400 text-sm hover:text-primary dark:hover:text-primary" href="#features">Features</a>
-                  <a className="text-text-sub-light dark:text-gray-400 text-sm hover:text-primary dark:hover:text-primary" href="#pricing">Pricing</a>
                   <a className="text-text-sub-light dark:text-gray-400 text-sm hover:text-primary dark:hover:text-primary" href="#showcase">Showcase</a>
                 </div>
               </div>

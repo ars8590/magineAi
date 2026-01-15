@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ThemeToggle } from '../../components/ThemeToggle';
+import { LogoLink } from '../../components/LogoLink';
 import type { GenerationRequest } from '../../types';
 
 const initial: GenerationRequest = {
@@ -78,6 +79,13 @@ export default function CreatePage() {
   const [keywords, setKeywords] = useState<string[]>(['Time Travel', 'Friendship']);
   const [keywordInput, setKeywordInput] = useState('');
 
+  useEffect(() => {
+    const token = localStorage.getItem('user_token') || localStorage.getItem('admin_token');
+    if (!token) {
+      router.push('/login');
+    }
+  }, [router]);
+
   const update = (key: keyof GenerationRequest, value: string | number) => {
     setForm((prev) => ({ ...prev, [key]: key === 'age' ? Number(value) : value }));
   };
@@ -103,33 +111,35 @@ export default function CreatePage() {
       age: String(form.age),
       genre: form.genre,
       theme: form.theme,
-      keywords: form.keywords,
+      keywords: Array.isArray(form.keywords) ? form.keywords.join(', ') : form.keywords,
       language: form.language,
       pages: String(form.pages || 20)
     });
     router.push(`/generate?${params.toString()}`);
   };
 
-  const agePercentage = ((form.age - 3) / (120 - 3)) * 100;
+
 
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-text-main-light dark:text-gray-100 antialiased overflow-x-hidden min-h-screen">
       {/* Top Navigation */}
       <header className="sticky top-0 z-50 w-full bg-[#f9f8fc] dark:bg-background-dark border-b border-solid border-border-light dark:border-gray-800">
         <div className="px-4 md:px-10 py-3 flex items-center justify-between max-w-7xl mx-auto">
+
           <div className="flex items-center gap-4 text-text-main-light dark:text-white">
-            <div className="size-8 text-primary">
-              <span className="material-symbols-outlined text-3xl">auto_awesome</span>
-            </div>
-            <h2 className="text-xl font-bold leading-tight tracking-[-0.015em]">MagineAI</h2>
+            <LogoLink className="flex items-center gap-4">
+              <div className="size-8 text-primary">
+                <span className="material-symbols-outlined text-3xl">auto_awesome</span>
+              </div>
+              <h2 className="text-xl font-bold leading-tight tracking-[-0.015em]">MagineAI</h2>
+            </LogoLink>
           </div>
           {/* Desktop Nav */}
           <div className="hidden md:flex flex-1 justify-end gap-8 items-center">
             <div className="flex items-center gap-6">
               <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">Home</Link>
-              <a className="text-sm font-medium hover:text-primary transition-colors" href="#">My Library</a>
+              <Link className="text-sm font-medium hover:text-primary transition-colors" href="/dashboard">My Library</Link>
               <a className="text-sm font-medium hover:text-primary transition-colors" href="#">Community</a>
-              <a className="text-sm font-medium hover:text-primary transition-colors" href="#">Pricing</a>
             </div>
             <div className="flex items-center gap-4">
               <ThemeToggle />
@@ -170,36 +180,78 @@ export default function CreatePage() {
                   Who is this story for?
                 </h3>
                 <div className="flex flex-col gap-6">
-                  <div className="flex justify-between items-end">
-                    <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Target Age Group</label>
-                    <span className="text-2xl font-bold text-primary">
-                      {form.age < 13 ? 'Kids' : form.age < 18 ? 'Teens (13-17)' : 'Adults'}
-                    </span>
-                  </div>
-                  {/* Custom Range Slider Representation */}
-                  <div className="relative w-full h-12 flex items-center select-none">
-                    <div className="absolute w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-primary" style={{ width: `${agePercentage}%` }}></div>
-                    </div>
-                    <input
-                      type="range"
-                      min="3"
-                      max="120"
-                      value={form.age}
-                      onChange={(e) => update('age', Number(e.target.value))}
-                      className="absolute w-full h-2 bg-transparent appearance-none cursor-pointer z-10"
-                      style={{
-                        background: 'transparent'
-                      }}
-                    />
-                    <div className="absolute left-1/2 -translate-x-1/2 w-6 h-6 bg-white border-4 border-primary rounded-full shadow cursor-grab hover:scale-110 transition-transform" style={{ left: `${agePercentage}%` }}></div>
-                    {/* Markers */}
-                    <div className="absolute top-6 w-full flex justify-between text-xs font-medium text-gray-400 mt-2">
-                      <span>Kids</span>
-                      <span>Teens</span>
-                      <span>Adults</span>
-                    </div>
-                  </div>
+                  {(() => {
+                    // DISCRETE SLIDER LOGIC
+                    const AGE_STEPS = [
+                      { label: 'Kids', value: 8, description: 'Child-friendly content' }, // Index 0
+                      { label: 'Teens (13-17)', value: 15, description: 'Young Adult content' }, // Index 1
+                      { label: 'Adults', value: 25, description: 'Mature/General audience' }  // Index 2
+                    ];
+
+                    const getStepFromAge = (age: number) => {
+                      if (age < 13) return 0;
+                      if (age < 18) return 1;
+                      return 2;
+                    };
+
+                    const currentStep = getStepFromAge(form.age);
+                    const currentLabel = AGE_STEPS[currentStep].label;
+                    const stepPercentage = (currentStep / 2) * 100;
+
+                    return (
+                      <>
+                        <div className="flex justify-between items-end">
+                          <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Target Age Group</label>
+                          <div className="text-right">
+                            <span className="text-2xl font-bold text-primary block">{currentLabel}</span>
+                            <span className="text-xs text-gray-400 font-medium">{AGE_STEPS[currentStep].description}</span>
+                          </div>
+                        </div>
+
+                        {/* Custom Snap Slider */}
+                        <div className="relative w-full h-12 flex items-center select-none group">
+                          {/* Track Background */}
+                          <div className="absolute w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div className="h-full bg-primary transition-all duration-300 ease-out" style={{ width: `${stepPercentage}%` }}></div>
+                          </div>
+
+                          {/* Hidden Input for Logic */}
+                          <input
+                            type="range"
+                            min="0"
+                            max="2"
+                            step="1"
+                            value={currentStep}
+                            onChange={(e) => update('age', AGE_STEPS[Number(e.target.value)].value)}
+                            className="absolute w-full h-full opacity-0 cursor-pointer z-20"
+                            aria-label="Select Age Group"
+                          />
+
+                          {/* Visible Thumb */}
+                          <div
+                            className="absolute z-10 size-6 bg-white border-4 border-primary rounded-full shadow-md cursor-grab active:cursor-grabbing transition-all duration-300 ease-out group-hover:scale-110 group-active:scale-125"
+                            style={{
+                              left: `calc(${stepPercentage}% - 12px)`, // Center thumb (12px is half of size-6)
+                            }}
+                          ></div>
+
+                          {/* Step Markers/Ticks */}
+                          <div className="absolute w-full flex justify-between px-1 pointer-events-none">
+                            {[0, 1, 2].map(step => (
+                              <div key={step} className={`size-2 rounded-full transition-colors duration-300 ${step <= currentStep ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
+                            ))}
+                          </div>
+
+                          {/* Labels below */}
+                          <div className="absolute top-8 w-full flex justify-between text-xs font-bold text-gray-400 mt-1 pointer-events-none">
+                            <span onClick={() => update('age', 8)} className="cursor-pointer hover:text-primary transition-colors pointer-events-auto">Kids</span>
+                            <span onClick={() => update('age', 15)} className="cursor-pointer hover:text-primary transition-colors pointer-events-auto">Teens</span>
+                            <span onClick={() => update('age', 25)} className="cursor-pointer hover:text-primary transition-colors pointer-events-auto">Adults</span>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </section>
 
@@ -214,25 +266,22 @@ export default function CreatePage() {
                     <div
                       key={genre.id}
                       onClick={() => update('genre', genre.id)}
-                      className={`relative group cursor-pointer border-2 rounded-xl p-4 flex flex-col items-center text-center gap-3 transition-all ${
-                        form.genre === genre.id
-                          ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                          : 'border-transparent hover:border-primary/30 bg-gray-50 dark:bg-gray-800/50'
-                      }`}
+                      className={`relative group cursor-pointer border-2 rounded-xl p-4 flex flex-col items-center text-center gap-3 transition-all ${form.genre === genre.id
+                        ? 'border-primary bg-primary/5 dark:bg-primary/10'
+                        : 'border-transparent hover:border-primary/30 bg-gray-50 dark:bg-gray-800/50'
+                        }`}
                     >
                       {form.genre === genre.id && (
                         <div className="absolute top-2 right-2 text-primary">
                           <span className="material-symbols-outlined text-xl">check_circle</span>
                         </div>
                       )}
-                      <div className={`size-12 rounded-full bg-white dark:bg-gray-800 shadow-sm flex items-center justify-center transition-colors ${
-                        form.genre === genre.id ? 'text-primary' : 'text-gray-500 dark:text-gray-400 group-hover:text-primary'
-                      }`}>
+                      <div className={`size-12 rounded-full bg-white dark:bg-gray-800 shadow-sm flex items-center justify-center transition-colors ${form.genre === genre.id ? 'text-primary' : 'text-gray-500 dark:text-gray-400 group-hover:text-primary'
+                        }`}>
                         <span className="material-symbols-outlined text-2xl">{genre.icon}</span>
                       </div>
-                      <span className={`font-medium text-sm ${
-                        form.genre === genre.id ? 'font-bold' : 'text-gray-600 dark:text-gray-300'
-                      }`}>{genre.label}</span>
+                      <span className={`font-medium text-sm ${form.genre === genre.id ? 'font-bold' : 'text-gray-600 dark:text-gray-300'
+                        }`}>{genre.label}</span>
                     </div>
                   ))}
                 </div>
