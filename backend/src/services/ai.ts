@@ -101,7 +101,7 @@ export async function generateStory(input: GenerationRequest): Promise<any> {
     - Chapters: Generate ${Math.max(2, Math.ceil(chapterSlots.length / 1.5))} distinct chapters.
       * CRITICAL: Write each chapter as ONE CONTINUOUS BLOCK of text. 
       * Do NOT split chapters into pages yourself. 
-      * Each chapter must be LONG (600+ words).
+      * Each chapter should be long and detailed (no upper limit).
       * Do NOT summarize. Fill the content.
     - Summary: Detailed takeaways.
     
@@ -154,8 +154,8 @@ export async function generateStory(input: GenerationRequest): Promise<any> {
     }
 
     // --- CHAPTERS (Reflow) ---
-    // Helper to split text into chunks of ~400 words (approx 1 page) respecting paragraphs
-    const splitIntoPages = (text: string, wordsPerPage = 400): string[] => {
+    // Helper to split text into chunks of ~245 words (approx 1 page) respecting paragraphs
+    const splitIntoPages = (text: string, wordsPerPage = 245): string[] => {
       const paragraphs = text.split('\n');
       const pages: string[] = [];
       let currentPage = "";
@@ -184,8 +184,8 @@ export async function generateStory(input: GenerationRequest): Promise<any> {
 
     for (let i = 0; i < generatedChapters.length; i++) {
       const chapter = generatedChapters[i];
-      // Split this chapter into chunks
-      const chunks = splitIntoPages(chapter.content, 450); // 450 words/page target
+      // Split this chapter into chunks of 245 words (Strict Page Limit)
+      const chunks = splitIntoPages(chapter.content, 245);
 
       for (let c = 0; c < chunks.length; c++) {
         if (currentSlotIndex >= chapterSlots.length) break; // No more pages allocated
@@ -204,7 +204,7 @@ export async function generateStory(input: GenerationRequest): Promise<any> {
     // Handle unused slots (if generation was shorter than planned pages)
     while (currentSlotIndex < chapterSlots.length) {
       const slot = chapterSlots[currentSlotIndex];
-      slot.type = 'feature'; // Convert unused chapter to feature or ad placeholder logic?
+      slot.type = 'FEATURE'; // Convert unused chapter to feature or ad placeholder logic?
       // Actually, let's just fill it with a generic "Notes" or cut it? 
       // We can't cut pages easily from the array middle without shifting numbers. 
       // Let's make it a "Gallery" page if we have prompt? 

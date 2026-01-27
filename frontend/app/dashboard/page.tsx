@@ -1,14 +1,15 @@
 'use client';
 
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { LogoLink } from '../../components/LogoLink';
 
 import { getLibrary, deleteContent, fetchContent } from '../../lib/api';
-import type { GeneratedContent } from '../../types';
-import { exportContentToPdf } from '../../utils/pdf';
+import type { GeneratedContent, MagazineStructure } from '../../types';
+import { exportMultiPageToPdf } from '../../utils/pdf';
+import { MagazinePageRenderer } from '../../components/MagazinePageRenderer';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export default function DashboardPage() {
   const [libraryItems, setLibraryItems] = useState<GeneratedContent[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [contentToPrint, setContentToPrint] = useState<GeneratedContent | null>(null);
   const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -29,16 +31,60 @@ export default function DashboardPage() {
 
     setDownloadingId(id);
     try {
-      // Fetch full content to ensure we have all details/pages
+      // 1. Fetch full content
       const fullContent = await fetchContent(id);
-      await exportContentToPdf(fullContent, `${title.replace(/[^a-z0-9]/gi, '_')}.pdf`);
+
+      // 2. Set state to render the hidden view
+      setContentToPrint(fullContent);
+
+      // The actual export is triggered by the useEffect below once contentToPrint is set
     } catch (err) {
-      console.error('Download failed:', err);
-      alert('Failed to generate PDF. Please try again.');
-    } finally {
+      console.error('Download setup failed:', err);
+      alert('Failed to prepare PDF. Please try again.');
       setDownloadingId(null);
+      setContentToPrint(null);
     }
   };
+
+  // Effect to trigger PDF generation once content is ready in local state
+  useEffect(() => {
+    if (!contentToPrint) return;
+
+    const generatePdf = async () => {
+      try {
+        // Parse structure to get page count
+        let structure: MagazineStructure | null = null;
+        try {
+          if (contentToPrint.mainStory) {
+            structure = JSON.parse(contentToPrint.mainStory);
+          }
+        } catch (e) { console.warn("Failed to parse magazine structure for PDF", e); }
+
+        if (structure && structure.pages) {
+          // Wait for DOM to render and images to (hopefully) load
+          // A 2.5s delay gives reasonable confidence for standard images
+          await new Promise(resolve => setTimeout(resolve, 2500));
+
+          const pageIds = structure.pages.map((_, i) => `dashboard-print-page-${i}`);
+          const filename = `magineai-${contentToPrint.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.pdf`;
+
+          await exportMultiPageToPdf(pageIds, filename);
+        } else {
+          // Fallback for legacy items (if any, though mostly structured now)
+          alert("This content doesn't support the new high-quality export.");
+        }
+
+      } catch (err) {
+        console.error("PDF Generation failed", err);
+        alert("Failed to generate PDF file.");
+      } finally {
+        setDownloadingId(null);
+        setContentToPrint(null);
+      }
+    };
+
+    generatePdf();
+  }, [contentToPrint]);
 
   const handleLogout = () => {
     localStorage.removeItem('user_token');
@@ -106,6 +152,14 @@ export default function DashboardPage() {
     }
   };
 
+  // Helper to get structure for the hidden printer
+  const getPrintStructure = () => {
+    if (!contentToPrint?.mainStory) return null;
+    try { return JSON.parse(contentToPrint.mainStory) as MagazineStructure; }
+    catch { return null; }
+  };
+  const printStructure = getPrintStructure();
+
   return (
     <div className="bg-background-light dark:bg-background-dark text-text-main-light dark:text-text-main-dark font-display antialiased h-screen flex overflow-hidden selection:bg-primary selection:text-white">
       {/* Sidebar */}
@@ -169,7 +223,7 @@ export default function DashboardPage() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full min-w-0">
+      <main className="flex-1 flex flex-col h-full min-w-0 relative">
         {/* Header */}
         <header className="h-20 border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark px-6 flex items-center justify-between shrink-0 z-20">
           {/* Mobile Menu Trigger */}
@@ -369,6 +423,19 @@ export default function DashboardPage() {
             <span className="material-symbols-outlined text-2xl">add</span>
           </button>
         </Link>
+
+        {/* HIDDEN PRINT CONTAINER FOR PDF GENERATION */}
+        {printStructure && (
+          <div className="fixed left-[200vw] top-0 pointer-events-none opacity-0">
+            {printStructure.pages.map((p, i) => (
+              <div id={`dashboard-print-page-${i}`} key={i} className="mb-4">
+                {/* Using Render Mode 'print' for standardized high-res output */}
+                <MagazinePageRenderer page={p} structure={printStructure} renderMode="print" />
+              </div>
+            ))}
+          </div>
+        )}
+
       </main>
     </div>
   );
