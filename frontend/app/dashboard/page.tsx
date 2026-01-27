@@ -6,16 +6,39 @@ import { useState, useEffect } from 'react';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { LogoLink } from '../../components/LogoLink';
 
-import { getLibrary, deleteContent } from '../../lib/api';
+import { getLibrary, deleteContent, fetchContent } from '../../lib/api';
 import type { GeneratedContent } from '../../types';
+import { exportContentToPdf } from '../../utils/pdf';
 
 export default function DashboardPage() {
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState('All Items');
+  const [sortBy, setSortBy] = useState('Date Created');
+  const [layout, setLayout] = useState<'grid' | 'list'>('grid');
   const [libraryItems, setLibraryItems] = useState<GeneratedContent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // ... (Logout/Delete handlers remain same)
+
+  const handleDownload = async (e: React.MouseEvent, id: string, title: string) => {
+    e.stopPropagation();
+    if (downloadingId) return; // Prevent multiple clicks
+
+    setDownloadingId(id);
+    try {
+      // Fetch full content to ensure we have all details/pages
+      const fullContent = await fetchContent(id);
+      await exportContentToPdf(fullContent, `${title.replace(/[^a-z0-9]/gi, '_')}.pdf`);
+    } catch (err) {
+      console.error('Download failed:', err);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('user_token');
@@ -42,26 +65,7 @@ export default function DashboardPage() {
     if (userInfo) {
       setUser(JSON.parse(userInfo));
     }
-    {/* Actions */ }
-    <div className="flex items-center gap-4 ml-6">
-      <Link href="/create">
-        <button className="hidden sm:flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-all shadow-md shadow-primary/20">
-          <span className="material-symbols-outlined text-[20px]">add</span>
-          <span>Create New</span>
-        </button>
-      </Link>
-      <div className="h-8 w-[1px] bg-border-light dark:bg-border-dark mx-2"></div>
-      <ThemeToggle />
-      <button className="relative p-2 text-text-sub-light dark:text-text-sub-dark hover:text-primary transition-colors">
-        <span className="material-symbols-outlined">notifications</span>
-        <span className="absolute top-2 right-2 size-2 bg-red-500 rounded-full"></span>
-      </button>
-      <div onClick={handleLogout} title="Logout" className="size-10 rounded-full bg-cover bg-center border-2 border-border-light dark:border-border-dark cursor-pointer hover:border-red-500 transition-colors relative group" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuBSwlJZ47ONFsePugL7NgiNspnVUymj0QLdvtin7tP3fBC9dv849mk9VRVfgFjr027y2u71CNZWV1G41gAYwYHXoclFzOjMR6vM8YHOmY9NncLr4XTgxO18UGeCyyJDlo1QtiPYzO3ZfL76rqBqeROTQP_gtnwGuqYn-EIhcfBp2YqBkNX9g-Dd2GM27DTF7Doz9cb98mHeG0QoSMPU-B-Dl9bYo6PtCKxvXvPEskVgd59C7PfPPLmKPRkP-DoK4-KHZQW9wuZDwI2D')" }}>
-        <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-          <span className="material-symbols-outlined text-white text-sm">logout</span>
-        </div>
-      </div>
-    </div>
+
     if (!token) {
       router.push('/login');
       return;
@@ -81,12 +85,17 @@ export default function DashboardPage() {
     loadLibrary();
   }, [router]);
 
-  const filteredItems = libraryItems.filter(item => {
-    if (activeFilter === 'All Items') return true;
-    // Simple mapping: 'Magazines' -> 'magazine', 'Books' -> 'book'
-    const typeMap: Record<string, string> = { 'Magazines': 'magazine', 'Books': 'book', 'Stories': 'story' };
-    return item.type === typeMap[activeFilter];
-  });
+  const filteredItems = libraryItems
+    .filter(item => {
+      if (activeFilter === 'All Items') return true;
+      const typeMap: Record<string, string> = { 'Magazines': 'magazine', 'Books': 'book', 'Stories': 'story' };
+      return item.type === typeMap[activeFilter];
+    })
+    .sort((a, b) => {
+      if (sortBy === 'Title (A-Z)') return a.title.localeCompare(b.title);
+      // Last Opened fallback to Created At for now as we don't track last_opened yet
+      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    });
 
   const getTypeColor = (type: string) => {
     switch (type) {
@@ -209,7 +218,7 @@ export default function DashboardPage() {
                 {(() => {
                   const latestItem = [...libraryItems].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
                   return (
-                    <div onClick={() => alert(`Navigating to content: ${latestItem.title}`)} className="cursor-pointer flex flex-col md:flex-row bg-surface-light dark:bg-surface-dark rounded-2xl p-6 shadow-sm border border-border-light dark:border-border-dark gap-6 items-center md:items-stretch group hover:border-primary/30 transition-all">
+                    <div onClick={() => router.push(`/reader/${latestItem.id}`)} className="cursor-pointer flex flex-col md:flex-row bg-surface-light dark:bg-surface-dark rounded-2xl p-6 shadow-sm border border-border-light dark:border-border-dark gap-6 items-center md:items-stretch group hover:border-primary/30 transition-all">
                       <div className="w-full md:w-1/3 aspect-video md:aspect-auto md:h-48 rounded-xl bg-cover bg-center shadow-md relative overflow-hidden"
                         style={{ backgroundImage: `url('${latestItem.images?.[0] || 'https://via.placeholder.com/800x600?text=No+Cover'}')` }}>
                         <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-all"></div>
@@ -227,7 +236,7 @@ export default function DashboardPage() {
                         </div>
                         <div className="mt-6 flex flex-col gap-3">
                           <div className="flex gap-3 mt-2">
-                            <button className="bg-primary hover:bg-primary/90 text-white text-sm font-bold py-2 px-6 rounded-lg transition-colors">Open</button>
+                            <button onClick={(e) => { e.stopPropagation(); router.push(`/reader/${latestItem.id}`); }} className="bg-primary hover:bg-primary/90 text-white text-sm font-bold py-2 px-6 rounded-lg transition-colors">Open</button>
                           </div>
                         </div>
                       </div>
@@ -255,7 +264,11 @@ export default function DashboardPage() {
               <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
                 <span className="text-sm text-text-sub-light dark:text-text-sub-dark hidden md:block">Sort by:</span>
                 <div className="relative">
-                  <select className="appearance-none bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark text-text-main-light dark:text-white text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5 pr-8 cursor-pointer">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="appearance-none bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark text-text-main-light dark:text-white text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5 pr-8 cursor-pointer"
+                  >
                     <option>Date Created</option>
                     <option>Title (A-Z)</option>
                     <option>Last Opened</option>
@@ -264,17 +277,21 @@ export default function DashboardPage() {
                     <span className="material-symbols-outlined text-sm">expand_more</span>
                   </div>
                 </div>
-                <button className="p-2 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-lg text-text-sub-light dark:text-text-sub-dark hover:text-primary transition-colors">
-                  <span className="material-symbols-outlined">grid_view</span>
+                <button
+                  onClick={() => setLayout(prev => prev === 'grid' ? 'list' : 'grid')}
+                  className="p-2 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-lg text-text-sub-light dark:text-text-sub-dark hover:text-primary transition-colors"
+                  title={layout === 'grid' ? "Switch to List View" : "Switch to Grid View"}
+                >
+                  <span className="material-symbols-outlined">{layout === 'grid' ? 'view_list' : 'grid_view'}</span>
                 </button>
               </div>
             </div>
             {/* Grid Content */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className={`${layout === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6' : 'flex flex-col gap-4'}`}>
               {loading ? (
                 // Skeleton Loader
                 Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="animate-pulse bg-gray-200 dark:bg-gray-800 rounded-xl aspect-[3/4]"></div>
+                  <div key={i} className={`animate-pulse bg-gray-200 dark:bg-gray-800 rounded-xl ${layout === 'grid' ? 'aspect-[3/4]' : 'h-32 w-full'}`}></div>
                 ))
               ) : filteredItems.length === 0 ? (
                 <div className="col-span-full text-center py-20">
@@ -287,14 +304,22 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 filteredItems.map((item) => (
-                  <div key={item.id} onClick={() => alert(`Navigating to content: ${item.title}`)} className="cursor-pointer group relative flex flex-col bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-1 transition-all duration-300">
-                    <div className="aspect-[3/4] bg-gray-200 dark:bg-gray-800 relative overflow-hidden">
+                  <div
+                    key={item.id}
+                    onClick={() => router.push(`/reader/${item.id}`)}
+                    className={`cursor-pointer group relative flex bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-1 transition-all duration-300 ${layout === 'grid' ? 'flex-col' : 'flex-row h-32'}`}
+                  >
+                    <div className={`bg-gray-200 dark:bg-gray-800 relative overflow-hidden ${layout === 'grid' ? 'aspect-[3/4] w-full' : 'w-24 shrink-0'}`}>
                       {item.image_url ? (
                         <div className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105" style={{ backgroundImage: `url('${item.image_url}')` }}></div>
                       ) : (
-                        <div className="absolute inset-0 flex items-center justify-center bg-primary/10 text-primary">
-                          <span className="material-symbols-outlined text-4xl">image</span>
-                        </div>
+                        item.images && item.images.length > 0 ? (
+                          <div className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105" style={{ backgroundImage: `url('${item.images[0]}')` }}></div>
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center bg-primary/10 text-primary">
+                            <span className="material-symbols-outlined text-4xl">image</span>
+                          </div>
+                        )
                       )}
 
                       <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -303,17 +328,33 @@ export default function DashboardPage() {
                         </button>
                       </div>
                     </div>
-                    <div className="p-4 flex flex-col gap-2 flex-1">
+                    <div className="p-4 flex flex-col gap-2 flex-1 min-w-0">
                       <div className="flex justify-between items-start">
                         <h3 className="font-bold text-text-main-light dark:text-white leading-tight line-clamp-1" title={item.title}>{item.title}</h3>
-                        <button onClick={(e) => handleDelete(e, item.id)} className="text-text-sub-light dark:text-text-sub-dark hover:text-red-500 transition-colors" title="Delete">
-                          <span className="material-symbols-outlined text-[20px]">delete</span>
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => handleDownload(e, item.id, item.title)}
+                            className="text-text-sub-light dark:text-text-sub-dark hover:text-primary transition-colors disabled:opacity-50"
+                            title="Download PDF"
+                            disabled={downloadingId === item.id}
+                          >
+                            <span className={`material-symbols-outlined text-[20px] ${downloadingId === item.id ? 'animate-pulse' : ''}`}>
+                              {downloadingId === item.id ? 'downloading' : 'download'}
+                            </span>
+                          </button>
+                          <button onClick={(e) => handleDelete(e, item.id)} className="text-text-sub-light dark:text-text-sub-dark hover:text-red-500 transition-colors" title="Delete">
+                            <span className="material-symbols-outlined text-[20px]">delete</span>
+                          </button>
+                        </div>
                       </div>
+                      {/* Check if description exists and show it in list view */}
+                      {layout === 'list' && item.introduction && (
+                        <p className="text-xs text-text-sub-light dark:text-text-sub-dark line-clamp-2 hidden sm:block">{item.introduction}</p>
+                      )}
                       <div className="flex items-center gap-2 text-xs text-text-sub-light dark:text-text-sub-dark mt-auto">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${getTypeColor(item.type || 'magazine')}`}>{item.type || 'magazine'}</span>
                         <span>•</span>
-                        <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                        <span>{new Date(item.created_at || Date.now()).toLocaleDateString()}</span>
                       </div>
                     </div>
                   </div>

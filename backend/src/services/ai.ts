@@ -75,7 +75,7 @@ export async function generateStory(input: GenerationRequest): Promise<any> {
   const genAI = getGenAI();
   const model = genAI.getGenerativeModel({ model: 'models/gemini-2.5-flash' });
 
-  // 1. Plan the magazine
+  // 1. Plan the magazine structure (Allocating slots)
   const pages = planMagazine(input);
   const magazine: MagazineStructure = {
     title: `${input.theme} Magazine`,
@@ -85,151 +85,190 @@ export async function generateStory(input: GenerationRequest): Promise<any> {
 
   console.log(`Planning magazine with ${pages.length} pages.`);
 
-  // 2. Generate Titles (Small request)
-  const outlinePrompt = `Plan a ${pages.filter(p => p.type === 'CHAPTER').length}-chapter magazine about "${input.theme}" (` +
-    `Language: ${input.language || 'English'}, Genre: ${input.genre}, Keywords: ${input.keywords}, Age: ${input.age}). ` +
-    `Return ONLY a JSON array of specific chapter titles in ${input.language || 'English'}, e.g. ["Title 1", "Title 2"].`;
+  // 2. NEW: Generate Content in a STRUCTURED way (Sections vs Pages)
+  // We calculate available chapter slots to guide length, but don't force page-by-page.
+  const chapterSlots = pages.filter(p => p.type === 'CHAPTER');
+  const approxWords = chapterSlots.length * 500; // Target total length
 
-  let chapterTitles: string[] = [];
-  try {
-    const result = await model.generateContent(outlinePrompt);
-    const text = result.response.text().trim().replace(/```json/g, '').replace(/```/g, '');
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (jsonMatch) chapterTitles = JSON.parse(jsonMatch[0]);
-  } catch (e) {
-    // Warning surpressed for smoother UX
-  }
-
-  // Assign titles
-  let chapterIndex = 0;
-  for (const page of magazine.pages) {
-    if (page.type === 'CHAPTER') {
-      if (chapterTitles[chapterIndex]) {
-        page.title = chapterTitles[chapterIndex];
-      }
-      chapterIndex++;
-    }
-  }
-  magazine.title = chapterTitles[0] ? chapterTitles[0] : magazine.title;
-
-
-  // 3. Generate Text for ALL pages in ONE go to respect rate limits (5 RPM)
-  const contentPrompt = `You are the Editor-in-Chief. Write the full text content for a ${pages.length}-page magazine about "${input.theme}" in ${input.language || 'English'}.
+  const contentPrompt = `You are the Editor-in-Chief. Write the FULL text content for a magazine about "${input.theme}" in ${input.language || 'English'}.
     
-    Structure:
-    ${pages.map(p => `- Page ${p.pageNumber} (${p.type})`).join('\n')}
-
-    Audience: ${input.age} years old. Genre: ${input.genre}. Keywords: ${input.keywords}. Language: ${input.language || 'English'}.
+    Audience: ${input.age} years old. Genre: ${input.genre}. Keywords: ${input.keywords}.
     
-    Requirements:
-    - Write ALL content in ${input.language || 'English'}.
+    Structure Requirements:
     - Cover: Catchy tagline.
-    - Editor's Note: Welcoming, ~100 words. (If present)
-    - TOC: (Skip).
-    - Introduction: Engaging, ~300 words.
-    - Chapters: ~500 words each. Educational & Fun.
-    - Summary: Key takeaways.
-    - Back Cover: (Skip).
-
-    RETURN ONLY A VALID JSON OBJECT mapping page numbers to an object containing 'title', 'content', 'layout', and 'image_prompt', like this:
+    - Editor's Note: Welcoming, 2-3 paragraphs.
+    - Introduction: Deep dive, MAX 245 WORDS. Must fit on one page. Do NOT split.
+    - Chapters: Generate ${Math.max(2, Math.ceil(chapterSlots.length / 1.5))} distinct chapters.
+      * CRITICAL: Write each chapter as ONE CONTINUOUS BLOCK of text. 
+      * Do NOT split chapters into pages yourself. 
+      * Each chapter must be LONG (600+ words).
+      * Do NOT summarize. Fill the content.
+    - Summary: Detailed takeaways.
+    
+    RETURN ONLY A VALID JSON OBJECT with this exact structure:
     {
-      "1": { 
-        "title": "Localized Title", 
-        "content": "Tagline here",
-        "layout": "full-image",
-        "image_prompt": "A futuristic city skyline at sunset, cyberpunk style"
-      },
-      "2": { 
-        "title": "Editor's Note (Language)", 
-        "content": "Editor note text...",
-        "layout": "simple-text",
-        "image_prompt": "Portrait of a friendly editor writing at a desk" 
-      },
-      ...
+      "cover": { "title": "...", "tagline": "...", "image_prompt": "..." },
+      "editors_note": { "title": "...", "content": "..." },
+      "introduction": { "title": "...", "content": "...", "image_prompt": "..." },
+      "chapters": [
+        { "title": "...", "content": "FULL CONTINUOUS TEXT...", "image_prompt": "..." },
+        ...
+      ],
+      "summary": { "title": "...", "content": "..." }
     }
     
-    Layout Options (Choose wisely for variety):
-    - 'simple-text': Valid for Editor's Note, Summary.
-    - 'image-right': Standard chapter layout.
-    - 'image-left': Varied chapter layout.
-    - 'image-top': Good for introductions.
-    - 'full-image': Use for Cover and highly visual chapters.
-    - 'quote-break': Short chapters with impactful quotes.
-
-    The 'title' field MUST match the section type but translated to the target language.
-    'image_prompt' MUST be a visual description in English for an image generator (no text in image).
-    Do NOT include markdown formatting or ANY other text. Just raw JSON.`;
+    Layout Notes: 'image_prompt' must be English visual descriptions.
+    IMPORTANT: Write full narrative arcs. Do not end mid-sentence.`;
 
   try {
-    console.log("Generating full magazine content in one batch...");
+    console.log("Generating full magazine content...");
     const result = await model.generateContent(contentPrompt);
     const text = result.response.text().trim().replace(/```json/g, '').replace(/```/g, '');
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const generatedContent = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(text);
+    const genData = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(text);
 
-    // Assign content to pages
-    for (const page of magazine.pages) {
-      if (page.type === 'CONTENTS') {
-        page.content = JSON.stringify(magazine.pages.filter(p => p.type === 'CHAPTER').map(p => ({ page: p.pageNumber, title: p.title })));
-      } else if (page.type === 'BACK_COVER') {
-        // No text
-      } else {
-        // Use generated content or fallback
-        const pageKey = page.pageNumber.toString();
-        const genPage = generatedContent[pageKey];
-        if (typeof genPage === 'object' && genPage.content) {
-          page.content = genPage.content;
-          if (genPage.title) page.title = genPage.title;
-          if (genPage.layout) page.layout = genPage.layout;
-          if (genPage.image_prompt) page.imagePrompt = genPage.image_prompt;
-        } else if (typeof genPage === 'string') {
-          page.content = genPage;
-          page.layout = 'simple-text';
+    // 3. Assign Content to Slots (The Reflow Logic)
+
+    // --- Front Matter ---
+    const coverPage = magazine.pages.find(p => p.type === 'COVER');
+    if (coverPage && genData.cover) {
+      coverPage.title = genData.cover.title || coverPage.title;
+      coverPage.content = genData.cover.tagline || genData.cover.content;
+      coverPage.imagePrompt = genData.cover.image_prompt;
+      coverPage.layout = 'full-image';
+    }
+
+    const editorPage = magazine.pages.find(p => p.type === 'EDITOR_NOTE');
+    if (editorPage && genData.editors_note) {
+      editorPage.title = genData.editors_note.title || "Editor's Note";
+      editorPage.content = genData.editors_note.content;
+      editorPage.layout = 'simple-text';
+    }
+
+    const introPage = magazine.pages.find(p => p.type === 'INTRODUCTION');
+    if (introPage && genData.introduction) {
+      introPage.title = genData.introduction.title || "Introduction";
+      introPage.content = genData.introduction.content;
+      introPage.imagePrompt = genData.introduction.image_prompt;
+      introPage.layout = 'image-top'; // Enforce the safe layout we fixed earlier
+    }
+
+    // --- CHAPTERS (Reflow) ---
+    // Helper to split text into chunks of ~400 words (approx 1 page) respecting paragraphs
+    const splitIntoPages = (text: string, wordsPerPage = 400): string[] => {
+      const paragraphs = text.split('\n');
+      const pages: string[] = [];
+      let currentPage = "";
+      let currentWords = 0;
+
+      for (const para of paragraphs) {
+        if (!para.trim()) continue;
+        const paraWords = para.split(/\s+/).length;
+
+        if (currentWords + paraWords > wordsPerPage && currentWords > 100) {
+          // Push current page
+          pages.push(currentPage.trim());
+          currentPage = para + "\n\n";
+          currentWords = paraWords;
         } else {
-          page.content = "Content generation failed.";
-          page.layout = 'simple-text';
+          currentPage += para + "\n\n";
+          currentWords += paraWords;
         }
       }
+      if (currentPage.trim()) pages.push(currentPage.trim());
+      return pages;
+    };
 
-      // Generate Image URL (Local/Seed based - no API call)
-      // Use imagePrompt if available for better semantic binding
-      if (page.type === 'COVER' || page.type === 'CHAPTER' || page.type === 'INTRODUCTION' || (page.imagePrompt && page.layout !== 'simple-text')) {
+    const generatedChapters = genData.chapters || [];
+    let currentSlotIndex = 0;
+
+    for (let i = 0; i < generatedChapters.length; i++) {
+      const chapter = generatedChapters[i];
+      // Split this chapter into chunks
+      const chunks = splitIntoPages(chapter.content, 450); // 450 words/page target
+
+      for (let c = 0; c < chunks.length; c++) {
+        if (currentSlotIndex >= chapterSlots.length) break; // No more pages allocated
+
+        const slot = chapterSlots[currentSlotIndex];
+        slot.title = c === 0 ? chapter.title : `${chapter.title} (Cont.)`;
+        slot.content = chunks[c];
+        slot.imagePrompt = c === 0 ? chapter.image_prompt : undefined; // Only image for first page of chapter
+        slot.layout = c === 0 ? (i % 2 === 0 ? 'image-right' : 'image-left') : 'simple-text'; // Text-only for continuation
+        slot.chapterNumber = i + 1; // Correct logical chapter number
+
+        currentSlotIndex++;
+      }
+    }
+
+    // Handle unused slots (if generation was shorter than planned pages)
+    while (currentSlotIndex < chapterSlots.length) {
+      const slot = chapterSlots[currentSlotIndex];
+      slot.type = 'feature'; // Convert unused chapter to feature or ad placeholder logic?
+      // Actually, let's just fill it with a generic "Notes" or cut it? 
+      // We can't cut pages easily from the array middle without shifting numbers. 
+      // Let's make it a "Gallery" page if we have prompt? 
+      // Or just leave it blank? 
+      // Let's use a filler.
+      slot.title = "Visual Gallery";
+      slot.layout = 'full-image';
+      slot.content = "";
+      // Seed image will handle the rest
+      currentSlotIndex++;
+    }
+
+
+    // --- Back Matter ---
+    const summaryPage = magazine.pages.find(p => p.type === 'SUMMARY');
+    if (summaryPage && genData.summary) {
+      summaryPage.title = genData.summary.title || "Summary";
+      summaryPage.content = genData.summary.content;
+      summaryPage.layout = 'simple-text';
+    }
+
+    // TOC Generation (Post-Reflow)
+    const tocPage = magazine.pages.find(p => p.type === 'CONTENTS');
+    if (tocPage) {
+      // Collect logical chapters (unique titles)
+      const logicalChapters = chapterSlots
+        .filter((p, i, arr) => !p.title?.includes('(Cont.)'))
+        .map(p => ({ page: p.pageNumber, title: p.title }));
+      tocPage.content = JSON.stringify(logicalChapters);
+    }
+
+    // Final Image Seeding
+    for (const page of magazine.pages) {
+      if (page.type === 'BACK_COVER' || page.type === 'CONTENTS') continue;
+
+      // Generate seed if no image yet
+      if (!page.image) {
         const seedSource = page.imagePrompt || page.title || input.theme + page.pageNumber;
         const seed = seedSource.replace(/[^a-z0-9]/gi, '-');
         page.image = `https://picsum.photos/seed/${seed}/800/1200`;
       }
     }
 
+
   } catch (error) {
-    console.error("Failed to generate batch content", error);
-    // Fallback for demo
+    console.error("Failed to generate content:", error);
+    // Fallback logic remains roughly same, or simplify
     magazine.pages.forEach(p => {
-      if (!p.content && p.type !== 'BACK_COVER' && p.type !== 'CONTENTS') {
-        p.content = "Content temporarily unavailable due to high load. Please try again.";
-        // Ensure image generation even if text fails
-        const seed = (p.title || input.theme + p.pageNumber).replace(/[^a-z0-9]/gi, '-');
-        p.image = `https://picsum.photos/seed/${seed}/800/1200`;
-      }
+      if (!p.content) { p.content = "Generation failed. Please retry."; }
+      if (!p.image) { p.image = `https://picsum.photos/seed/${p.pageNumber}/800/1200`; }
     });
   }
 
-  // Return backward compatible structure
-  // We assume the caller handles the new structure, but let's fit it into GeneratedContent
-  // The caller (route) expects { title, introduction, main_story, ... }
-
-  // We will serialize the ENTIRE magazine structure into 'main_story' 
-  // and provide summaries for other fields.
-  const introPage = magazine.pages.find(p => p.type === 'INTRODUCTION');
-  const summaryPage = magazine.pages.find(p => p.type === 'SUMMARY');
-  const allImages = magazine.pages.filter(p => p.image).map(p => p.image!);
+  // Return formatted response
+  const intro = magazine.pages.find(p => p.type === 'INTRODUCTION');
+  const sum = magazine.pages.find(p => p.type === 'SUMMARY');
 
   return {
     title: magazine.title,
-    introduction: introPage?.content || "Welcome to your magazine.",
-    main_story: JSON.stringify(magazine), // KEY: Storing the whole structure here!
-    character_highlights: summaryPage?.content || "",
-    conclusion: "End of Magazine",
-    images: allImages // Return explicit images array for route
+    introduction: intro?.content || "",
+    main_story: JSON.stringify(magazine),
+    character_highlights: sum?.content || "",
+    conclusion: "End",
+    images: magazine.pages.map(p => p.image || "")
   };
 }
 

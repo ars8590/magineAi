@@ -72,6 +72,30 @@ export function MagazinePageRenderer({ page, structure, renderMode = 'screen' }:
                         <span className="material-symbols-outlined text-2xl">auto_awesome</span>
                     </div>
                 </div>
+            ) : page.type === 'INTRODUCTION' ? (
+                /* INTRODUCTION PAGE - Enforce Top/Side Image (No Overlap) */
+                <div className="flex-1 flex flex-col p-12 lg:p-16 z-10">
+                    <header className="mb-10">
+                        <div className="flex items-center gap-4 mb-4">
+                            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{page.type.replace('_', ' ')}</span>
+                        </div>
+                        <h2 className="text-4xl lg:text-5xl font-black text-gray-900 dark:text-white leading-none">{page.title}</h2>
+                    </header>
+                    <div className="flex-1 grid gap-8 lg:grid-cols-2">
+                        {page.image && (
+                            <div className="relative rounded-lg overflow-hidden h-64 lg:h-auto shadow-lg lg:order-last">
+                                <img src={page.image} alt={page.title} className="w-full h-full object-cover" crossOrigin="anonymous" />
+                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
+                                    <p className="text-white text-xs italic opacity-80">{page.imagePrompt || 'Visual interpretation'}</p>
+                                </div>
+                            </div>
+                        )}
+                        <div className="prose dark:prose-invert max-w-none font-serif text-lg leading-relaxed text-gray-700 dark:text-gray-300">
+                            {page.content}
+                        </div>
+                    </div>
+                    <Footer />
+                </div>
             ) : (
                 /* STANDARD PAGES (Chapters, Intro, etc) */
                 <div className="relative h-full flex flex-col z-10">
