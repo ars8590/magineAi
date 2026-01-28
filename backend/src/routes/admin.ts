@@ -29,7 +29,8 @@ router.get('/users', requireAdmin, async (req, res) => {
     const users = await getAllUsers();
     return res.json(users);
   } catch (err: any) {
-    return res.status(500).json({ message: 'Failed to fetch users' });
+    console.error('Error fetching users:', err);
+    return res.status(500).json({ message: 'Failed to fetch users: ' + err.message });
   }
 });
 
@@ -40,7 +41,8 @@ router.post('/users/:id/status', requireAdmin, async (req, res) => {
     await updateUserStatus(req.params.id, status);
     return res.json({ ok: true });
   } catch (err: any) {
-    return res.status(500).json({ message: 'Failed to update status' });
+    console.error('Error updating user status:', err);
+    return res.status(500).json({ message: 'Failed to update status: ' + err.message });
   }
 });
 
@@ -49,7 +51,8 @@ router.get('/content', requireAdmin, async (req, res) => {
     const content = await getAllContent();
     return res.json(content);
   } catch (err: any) {
-    return res.status(500).json({ message: 'Failed to fetch content' });
+    console.error('Error fetching content:', err);
+    return res.status(500).json({ message: 'Failed to fetch content: ' + err.message });
   }
 });
 
@@ -58,7 +61,8 @@ router.delete('/content/:id', requireAdmin, async (req, res) => {
     await deleteGeneratedContent(req.params.id);
     return res.json({ ok: true });
   } catch (err: any) {
-    return res.status(500).json({ message: 'Failed to delete content' });
+    console.error('Error deleting content:', err);
+    return res.status(500).json({ message: 'Failed to delete content: ' + err.message });
   }
 });
 

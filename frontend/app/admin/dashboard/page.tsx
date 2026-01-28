@@ -30,20 +30,18 @@ export default function AdminDashboardPage() {
   const [reviewed, setReviewed] = useState<GeneratedContent | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'moderating'>('idle');
   const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const stored = localStorage.getItem('admin_token');
     if (!stored) {
       router.replace('/admin/login');
     } else {
       setToken(stored);
-      loadDashboardData();
     }
   }, [router]);
-
-  const loadDashboardData = async () => {
-    // Potentially load stats
-  };
 
   const handleLogout = () => {
     localStorage.removeItem('admin_token');
@@ -55,8 +53,9 @@ export default function AdminDashboardPage() {
     try {
       const data = await fetchUsers();
       setUsers(data as any);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setError('Failed to load users: ' + (err?.response?.data?.message || err.message));
     } finally {
       setLoading(false);
     }
@@ -67,8 +66,9 @@ export default function AdminDashboardPage() {
     try {
       const data = await fetchAllAdminContent();
       setContentList(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setError('Failed to load content: ' + (err?.response?.data?.message || err.message));
     } finally {
       setLoading(false);
     }
@@ -96,24 +96,9 @@ export default function AdminDashboardPage() {
   };
 
   useEffect(() => {
-    if (view === 'users') loadUsers();
-    if (view === 'content' || view === 'overview') loadAllContent(); // Overview uses content for queue
+    if (view === 'users' || view === 'overview') loadUsers();
+    if (view === 'content' || view === 'overview') loadAllContent();
   }, [view]);
-
-  // Old specific content loader
-  const loadContent = async () => {
-    if (!contentId) return;
-    setStatus('loading');
-    setMessage(null);
-    try {
-      const data = await fetchContent(contentId);
-      setReviewed(data);
-    } catch (err: any) {
-      setMessage(err?.response?.data?.message || 'Unable to load content.');
-    } finally {
-      setStatus('idle');
-    }
-  };
 
   const moderate = async (action: 'approve' | 'reject', targetId?: string) => {
     const id = targetId || contentId;
@@ -163,6 +148,7 @@ export default function AdminDashboardPage() {
             </div>
             <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{contentList.filter(c => c.status === 'pending').length}</span>
           </button>
+          <ThemeToggle showLabel={true} className="w-full justify-start px-4 py-3 rounded-xl text-text-sec-light dark:text-text-sec-dark hover:bg-background-light dark:hover:bg-background-dark hover:text-primary dark:hover:text-white transition-all group" />
           <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 rounded-xl text-text-sec-light dark:text-text-sec-dark hover:bg-red-500/10 hover:text-red-600 transition-all group w-full text-left mt-auto">
             <span className="material-symbols-outlined">logout</span>
             <span className="text-sm font-medium">Logout</span>
@@ -189,23 +175,9 @@ export default function AdminDashboardPage() {
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold tracking-tight">Dashboard Overview</h2>
           </div>
+          {/* Streamlined Header (No Search/Notifications) */}
           <div className="flex items-center gap-6">
-            {/* Search Bar */}
-            <div className="relative w-80 hidden md:block">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-sec-light dark:text-text-sec-dark text-xl">search</span>
-              <input className="w-full h-10 pl-10 pr-4 bg-background-light dark:bg-background-dark border-none rounded-lg text-sm focus:ring-2 focus:ring-primary text-text-main-light dark:text-text-main-dark placeholder:text-text-sec-light dark:placeholder:text-text-sec-dark" placeholder="Search users, magazines, or logs..." type="text" />
-            </div>
-            {/* Actions */}
-            <div className="flex items-center gap-3">
-              <ThemeToggle />
-              <button className="relative size-10 flex items-center justify-center rounded-lg hover:bg-background-light dark:hover:bg-background-dark text-text-sec-light dark:text-text-sec-dark transition-colors">
-                <span className="material-symbols-outlined">notifications</span>
-                <span className="absolute top-2.5 right-2.5 size-2 bg-red-500 rounded-full border border-white dark:border-surface-dark"></span>
-              </button>
-              <button className="size-10 flex items-center justify-center rounded-lg hover:bg-background-light dark:hover:bg-background-dark text-text-sec-light dark:text-text-sec-dark transition-colors">
-                <span className="material-symbols-outlined">help</span>
-              </button>
-            </div>
+            <p className="text-sm text-text-sec-light dark:text-text-sec-dark font-medium">{mounted ? new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''}</p>
           </div>
         </header>
         {/* Scrollable Dashboard Content */}
@@ -230,7 +202,7 @@ export default function AdminDashboardPage() {
                         <tr key={u.id} className="border-b border-border-light dark:border-border-dark last:border-0 hover:bg-background-light dark:hover:bg-background-dark/50">
                           <td className="py-4 text-sm font-medium">{u.name}</td>
                           <td className="py-4 text-sm">{u.email}</td>
-                          <td className="py-4 text-sm opacity-70">{new Date(u.created_at).toLocaleDateString()}</td>
+                          <td className="py-4 text-sm opacity-70">{mounted ? new Date(u.created_at).toLocaleDateString() : '...'}</td>
                           <td className="py-4 text-sm">
                             <span className={`px-2 py-1 rounded-full text-xs font-bold ${u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                               {u.status}
@@ -274,6 +246,9 @@ export default function AdminDashboardPage() {
                             </span>
                           </td>
                           <td className="px-6 py-4 text-right flex justify-end gap-2">
+                            <a href={`/reader/${c.id}`} target="_blank" className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50" title="View Magazine">
+                              <span className="material-symbols-outlined text-[20px]">visibility</span>
+                            </a>
                             <button onClick={() => moderate('approve', c.id)} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50" title="Approve">
                               <span className="material-symbols-outlined text-[20px]">check_circle</span>
                             </button>
@@ -291,10 +266,47 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
             ) : (
-              // Overview Mode (Existing Layout, simplified for queue)
+              // Overview Mode
               <div className="flex flex-col gap-8">
-                {/* Stats ... (Use existing cards if you want, omitting for brevity in this chunk if they are static) */}
-                {/* Content Moderation Queue (Using dynamic data) */}
+                {error && <div className="p-4 bg-red-100 text-red-700 rounded-xl border border-red-200">{error}</div>}
+                {/* Stat Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm">
+                    <div className="flex items-center gap-4">
+                      <div className="size-12 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-2xl">group</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-text-sec-light dark:text-text-sec-dark">Total Users</p>
+                        <h4 className="text-2xl font-bold">{users.length}</h4>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm">
+                    <div className="flex items-center gap-4">
+                      <div className="size-12 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-2xl">library_books</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-text-sec-light dark:text-text-sec-dark">Total Magazines</p>
+                        <h4 className="text-2xl font-bold">{contentList.length}</h4>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm">
+                    <div className="flex items-center gap-4">
+                      <div className="size-12 rounded-xl bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-2xl">pending_actions</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-text-sec-light dark:text-text-sec-dark">Pending Review</p>
+                        <h4 className="text-2xl font-bold">{contentList.filter(c => c.status === 'pending').length}</h4>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Content Moderation Queue */}
                 <div className="bg-surface-light dark:bg-surface-dark rounded-2xl border border-border-light dark:border-border-dark shadow-sm overflow-hidden">
                   <div className="p-6 border-b border-border-light dark:border-border-dark flex justify-between gap-4">
                     <div>
@@ -309,15 +321,19 @@ export default function AdminDashboardPage() {
                         {contentList.filter(c => c.status === 'pending').slice(0, 5).map(c => (
                           <tr key={c.id} className="group hover:bg-background-light dark:hover:bg-background-dark transition-colors">
                             <td className="px-6 py-4 font-bold">{c.title}</td>
-                            <td className="px-6 py-4">{c.users?.name}</td>
+                            <td className="px-6 py-4">{c.users?.name || 'Unknown'}</td>
                             <td className="px-6 py-4 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                <button onClick={() => moderate('approve', c.id)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><span className="material-symbols-outlined">check_circle</span></button>
-                                <button onClick={() => moderate('reject', c.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"><span className="material-symbols-outlined">cancel</span></button>
+                                <a href={`/reader/${c.id}`} target="_blank" className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="View Magazine"><span className="material-symbols-outlined">visibility</span></a>
+                                <button onClick={() => moderate('approve', c.id)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg" title="Approve"><span className="material-symbols-outlined">check_circle</span></button>
+                                <button onClick={() => moderate('reject', c.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg" title="Reject"><span className="material-symbols-outlined">cancel</span></button>
                               </div>
                             </td>
                           </tr>
                         ))}
+                        {contentList.filter(c => c.status === 'pending').length === 0 && (
+                          <tr><td colSpan={3} className="px-6 py-8 text-center text-text-sec-light dark:text-text-sec-dark">No pending items. Good job!</td></tr>
+                        )}
                       </tbody>
                     </table>
                   </div>

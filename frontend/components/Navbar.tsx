@@ -10,14 +10,6 @@ export function Navbar() {
         <LogoLink className="text-xl font-semibold text-white">
           MagineAI
         </LogoLink>
-        <div className="flex items-center gap-4 text-sm text-white/80">
-          <Link href="/feedback" className="hover:text-white">
-            Feedback
-          </Link>
-          <Link href="/admin/login" className="hover:text-white">
-            Admin
-          </Link>
-        </div>
       </nav>
     </header>
   );
