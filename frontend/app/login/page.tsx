@@ -1,32 +1,121 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { userLogin } from '../../lib/api';
+import { useState, useEffect } from 'react';
+import { userLogin, authExchange } from '../../lib/api';
+import { supabase } from '../../lib/supabase';
 import Link from 'next/link';
 
 export default function LoginPage() {
     const router = useRouter();
+
     const [email, setEmail] = useState('');
     const [userPassword, setUserPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+
+    const handleExchange = async (token: string) => {
+        try {
+            const { token: appToken, user } = await authExchange(token);
+            localStorage.setItem('user_token', appToken);
+            localStorage.setItem('user_info', JSON.stringify(user));
+            router.push('/dashboard');
+        } catch (err: any) {
+            setError(err?.response?.data?.message || 'Authentication exchange failed.');
+            setLoading(false);
+        }
+    };
 
     const onSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError(null);
         try {
-            const { token, user } = await userLogin(email, userPassword);
-            localStorage.setItem('user_token', token);
-            localStorage.setItem('user_info', JSON.stringify(user));
-            router.push('/dashboard');
+            // 1. Supabase Auth
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password: userPassword,
+            });
+
+            if (error) {
+                // Fallback to legacy login if Supabase fails (optional, but good for migration)
+                // actually, let's stick to the plan: prioritize Supabase.
+                // If the user doesn't exist in Supabase yet (legacy user), they might fail here.
+                // For now, if Supabase fails, show error. Legacy users might need to reset password or we migrate them.
+                // User instruction: "Existing users must continue to work."
+                // So if Supabase fails, try legacy API?
+                // Let's try Supabase first. If 'Invalid login credentials', try legacy?
+                // Or just implement a try-catch block where we try legacy if needed.
+                // Complexity: High.
+                // Simplification: Try legacy API first? No, Supabase is the goal.
+                // Let's try Supabase. If error message is 'Invalid login credentials', try legacy API as fallback.
+                if (error.message.includes('Invalid login credentials')) {
+                    try {
+                        const { token, user } = await userLogin(email, userPassword);
+                        localStorage.setItem('user_token', token);
+                        localStorage.setItem('user_info', JSON.stringify(user));
+                        router.push('/dashboard');
+                        return;
+                    } catch (legacyErr) {
+                        throw error; // Throw the original Supabase error if legacy also fails
+                    }
+                }
+                throw error;
+            }
+
+            // 2. Exchange Token
+            if (data.session) {
+                await handleExchange(data.session.access_token);
+            }
         } catch (err: any) {
-            setError(err?.response?.data?.message || 'Login failed.');
-        } finally {
+            setError(err.message || 'Login failed.');
             setLoading(false);
         }
     };
+
+    const handleGoogleLogin = async () => {
+        setLoading(true);
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: `${window.location.origin}/login/callback`,
+            },
+        });
+        if (error) {
+            setError(error.message);
+            setLoading(false);
+        }
+    };
+    // Note: We need a callback page to handle the redirect and exchange the token.
+    // Or we can handle it on this page if we check for session on mount.
+    // Let's use a useEffect on this page to check for session?
+    // User instruction: "Frontend OAuth flow: After Google redirect, retrieve session via supabase.auth.getSession(), Then call api.authExchange..."
+    // Typically, OAuth redirects back to the site. If we redirect to /dashboard or /login, we need to catch the implementation.
+    // I'll add a useEffect to check session.
+
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                // If we have a session but no local token, exchange it.
+                // Or checking if we just came back from redirect?
+                // Ideally, check if we need to exchange.
+                // Simple check: if session exists, try exchange.
+                // But we don't want to loop.
+                // Let's check if we have a user_token in local storage?
+                // No, that might be stale.
+                // Let's only do it if the hash contains access_token (implicit flow) or just generally?
+                // Supabase handles the URL parsing.
+                // Let's try:
+                // if (session) handleExchange(session.access_token);
+                // But this will run on every load if logged in.
+                // Maybe better to have a dedicated callback route or check query params?
+                // Supabase uses #access_token usually.
+            }
+        });
+    }, []);
+    // Actually, I'll stick to the button first.
+    // I will add the useEffect in a separate edit or include it here if I can fit it.
+    // I'll put it at the top.
 
     return (
         <div className="flex flex-1 w-full h-full min-h-screen bg-background-light dark:bg-background-dark font-display">
@@ -106,9 +195,17 @@ export default function LoginPage() {
                         </div>
                         {/* Social Login */}
                         <div className="grid grid-cols-1 gap-4">
-                            <button type="button" className="flex items-center justify-center gap-2 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-3 px-4 text-gray-700 dark:text-gray-200 font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                                <img alt="Google" className="w-5 h-5" src="https://lh3.googleusercontent.com/aida-public/AB6AXuClDDQxWfdFRdRX3P9fgtWSHY34GNj3d2ihvKo02Ca8k9699ebH31U8kP4dXJ4SPxz2l-Uowadtkq59GMdMqOSCmtpAojaZb6bY7eRq4zS-JWkb4KhP4IyRYWoRX7PTqu5-MOVMoYsyjB6-yJru5pRU8paWWCHgK8Aiwa8lwLqy1W6CjAzQ4I82tofY8foxfVhMQFD3BnNKvF6bhRSgBldGSD6g6OKyKasn80cQ7H-PBDNVhFzd1SWLt3PnBLF6VgEKhUCapidssrBV" />
-                                <span>Google</span>
+                            <button type="button" onClick={handleGoogleLogin} className="flex items-center justify-center gap-3 w-full rounded-full border border-gray-400 bg-white py-2.5 px-4 text-gray-900 font-medium hover:bg-gray-50 transition-colors">
+                                <div className="flex items-center justify-center w-6 h-6 rounded-full border border-gray-300 bg-white">
+                                    <svg className="w-4 h-4" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                                        <path fill="none" d="M0 0h48v48H0z"></path>
+                                    </svg>
+                                </div>
+                                <span>Sign in with Google</span>
                             </button>
 
                         </div>

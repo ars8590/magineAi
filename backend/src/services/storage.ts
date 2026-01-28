@@ -5,7 +5,8 @@ import { GeneratedContent, GenerationRequest } from '../types';
 let supabase: SupabaseClient | null = null;
 const IMAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'magazine-images';
 
-function getClient() {
+
+export function getClient() {
   if (!supabase) {
     if (!config.supabaseUrl || !config.supabaseKey) {
       throw new Error('Supabase credentials missing');
@@ -13,6 +14,13 @@ function getClient() {
     supabase = createClient(config.supabaseUrl, config.supabaseKey);
   }
   return supabase;
+}
+
+export async function verifySupabaseToken(token: string) {
+  const client = getClient();
+  const { data: { user }, error } = await client.auth.getUser(token);
+  if (error) return null;
+  return user;
 }
 
 export async function savePreference(userId: string | null, input: GenerationRequest) {

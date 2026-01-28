@@ -87,3 +87,11 @@ export async function fetchAllAdminContent() {
   return data;
 }
 
+
+export async function authExchange(supabaseToken: string) {
+  const { data } = await api.post<{ token: string; user: { id: string; name: string; email: string } }>(
+    '/auth/exchange',
+    { supabaseToken }
+  );
+  return data;
+}

@@ -105,19 +105,26 @@ export default function DashboardPage() {
     }
   };
 
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  // ... (delete handlers)
+
   useEffect(() => {
-    const token = localStorage.getItem('user_token') || localStorage.getItem('admin_token');
-    const userInfo = localStorage.getItem('user_info');
-    if (userInfo) {
-      setUser(JSON.parse(userInfo));
-    }
+    const checkAuth = async () => {
+      const token = localStorage.getItem('user_token') || localStorage.getItem('admin_token');
+      const userInfo = localStorage.getItem('user_info');
 
-    if (!token) {
-      router.push('/login');
-      return;
-    }
+      if (!token) {
+        router.replace('/login');
+        return;
+      }
 
-    const loadLibrary = async () => {
+      if (userInfo) {
+        setUser(JSON.parse(userInfo));
+      }
+
+      // Token exists, proceed to load library
+      setIsAuthLoading(false);
       try {
         const items = await getLibrary();
         setLibraryItems(items);
@@ -128,8 +135,20 @@ export default function DashboardPage() {
       }
     };
 
-    loadLibrary();
+    checkAuth();
   }, [router]);
+
+  // Auth Guard Loading State
+  if (isAuthLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background-light dark:bg-background-dark">
+        <div className="flex flex-col items-center gap-2">
+          <span className="material-symbols-outlined animate-spin text-primary text-4xl">progress_activity</span>
+          <p className="text-text-sub-light dark:text-text-sub-dark font-medium">Loading your library...</p>
+        </div>
+      </div>
+    );
+  }
 
   const filteredItems = libraryItems
     .filter(item => {

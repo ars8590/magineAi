@@ -79,5 +79,43 @@ router.post('/login/user', async (req, res) => {
   }
 });
 
+
+router.post('/exchange', async (req, res) => {
+  const { supabaseToken } = req.body;
+  if (!supabaseToken) return res.status(400).json({ message: 'Missing token' });
+
+  try {
+    const sbUser = await import('../services/storage').then(m => m.verifySupabaseToken(supabaseToken));
+
+    if (!sbUser || !sbUser.email) {
+      return res.status(401).json({ message: 'Invalid or expired token' });
+    }
+
+    // Safety: Ensure email verified if using email provider
+    const provider = sbUser.app_metadata.provider || 'email';
+    if (provider === 'email' && !sbUser.email_confirmed_at) {
+      return res.status(403).json({ message: 'Email not verified' });
+    }
+
+    // Sync to internal DB
+    let user = await findUser(sbUser.email);
+    if (!user) {
+      // Create new user with OAuth marker
+      const marker = `OAUTH_${provider.toUpperCase()}`;
+      // Use user metadata name or fallback
+      const name = sbUser.user_metadata.full_name || sbUser.user_metadata.name || 'Creator';
+      user = await createUser(sbUser.email, marker, name);
+    }
+
+    // Issue internal JWT
+    const token = jwt.sign({ role: 'user', sub: user.id }, config.jwtSecret, { expiresIn: '24h' });
+    return res.status(200).json({ token, user: { id: user.id, name: user.name, email: user.email } });
+
+  } catch (err: any) {
+    console.error('Exchange error:', err);
+    return res.status(500).json({ message: 'Authentication exchange failed' });
+  }
+});
+
 export default router;
 
