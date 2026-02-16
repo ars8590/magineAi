@@ -21,10 +21,12 @@ export interface GeneratedContent {
     type: 'magazine' | 'book' | 'story';
     status: 'pending' | 'approved' | 'rejected';
     created_at: string;
+    is_favorite?: boolean;
+    deleted_at?: string | null;
 }
 
 export interface FeedbackPayload {
-    contentId: string;
+    content_id: string;
     rating: number;
     comment: string;
 }

@@ -30,6 +30,16 @@ export async function submitFeedback(payload: FeedbackPayload) {
   return data;
 }
 
+export async function fetchAdminFeedback() {
+  const { data } = await api.get('/feedback/admin');
+  return data;
+}
+
+export async function fetchFeedbackStats() {
+  const { data } = await api.get('/feedback/admin/stats');
+  return data;
+}
+
 export async function adminLogin(username: string, password: string) {
   const { data } = await api.post<{ token: string }>('/auth/login', { username, password });
   return data;
@@ -66,7 +76,28 @@ export async function getLibrary() {
 }
 
 export async function deleteContent(id: string) {
-  await api.delete(`/library/${id}`); // Or /admin/content/${id} if admin
+  // Soft delete by default via DELETE /:id which we mapped to soft delete on backend
+  await api.delete(`/library/${id}`);
+}
+
+export async function moveToTrash(id: string) {
+  await api.post(`/library/${id}/trash`);
+}
+
+export async function restoreContent(id: string) {
+  await api.post(`/library/${id}/restore`);
+}
+
+export async function permanentDeleteContent(id: string) {
+  await api.delete(`/library/${id}/permanent`);
+}
+
+export async function emptyTrash() {
+  await api.delete(`/library/trash/empty`);
+}
+
+export async function toggleFavorite(id: string, isFavorite: boolean) {
+  await api.post(`/library/${id}/favorite`, { is_favorite: isFavorite });
 }
 
 export async function fetchUsers() {

@@ -9,9 +9,13 @@ router.get('/', requireAuth, async (req, res) => {
     try {
         // middleware: res.locals.user = { id: payload.sub }
         // middleware: res.locals.admin = payload (which has .sub)
-        const userId = res.locals.user?.id || res.locals.admin?.sub;
+        let userId = res.locals.user?.id;
+        if (!userId && res.locals.admin?.sub) {
+            const { getOrCreateShadowUser } = await import('../services/storage');
+            userId = await getOrCreateShadowUser(res.locals.admin.sub);
+        }
+
         if (!userId) {
-            // Should be caught by requireAuth, but double check
             return res.status(401).json({ message: 'Unauthorized' });
         }
         const library = await getUserLibrary(userId);
@@ -41,19 +45,95 @@ router.get('/:id', requireAuth, async (req, res) => {
     }
 });
 
-import { deleteGeneratedContent } from '../services/storage';
+import {
+    softDeleteContent,
+    restoreContent,
+    permanentlyDeleteContent,
+    toggleFavorite,
+    emptyTrash
+} from '../services/storage';
 
+// Soft Delete (Move to Trash)
+router.post('/:id/trash', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const content = await fetchGeneratedContent(id);
+        const userId = res.locals.user?.id || res.locals.admin?.sub;
+        if (content.user_id !== userId && !res.locals.admin) return res.status(403).json({ message: 'Forbidden' });
+
+        await softDeleteContent(id);
+        return res.json({ ok: true });
+    } catch (err: any) {
+        return res.status(500).json({ message: 'Failed to trash content' });
+    }
+});
+
+// Restore from Trash
+router.post('/:id/restore', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const content = await fetchGeneratedContent(id);
+        const userId = res.locals.user?.id || res.locals.admin?.sub;
+        if (content.user_id !== userId && !res.locals.admin) return res.status(403).json({ message: 'Forbidden' });
+
+        await restoreContent(id);
+        return res.json({ ok: true });
+    } catch (err: any) {
+        return res.status(500).json({ message: 'Failed to restore content' });
+    }
+});
+
+// Permanent Delete
+router.delete('/:id/permanent', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const content = await fetchGeneratedContent(id);
+        const userId = res.locals.user?.id || res.locals.admin?.sub;
+        if (content.user_id !== userId && !res.locals.admin) return res.status(403).json({ message: 'Forbidden' });
+
+        await permanentlyDeleteContent(id);
+        return res.json({ ok: true });
+    } catch (err: any) {
+        return res.status(500).json({ message: 'Failed to delete permanently' });
+    }
+});
+
+// Empty Trash
+router.delete('/trash/empty', requireAuth, async (req, res) => {
+    try {
+        const userId = res.locals.user?.id || res.locals.admin?.sub;
+        await emptyTrash(userId);
+        return res.json({ ok: true });
+    } catch (err: any) {
+        return res.status(500).json({ message: 'Failed to empty trash' });
+    }
+});
+
+// Toggle Favorite
+router.post('/:id/favorite', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { is_favorite } = req.body;
+        const content = await fetchGeneratedContent(id);
+        const userId = res.locals.user?.id || res.locals.admin?.sub;
+        if (content.user_id !== userId && !res.locals.admin) return res.status(403).json({ message: 'Forbidden' });
+
+        await toggleFavorite(id, is_favorite);
+        return res.json({ ok: true });
+    } catch (err: any) {
+        return res.status(500).json({ message: 'Failed to toggle favorite' });
+    }
+});
+
+// Legacy Delete (mapped to Soft Delete for backward compatibility if client calls DELETE /:id)
 router.delete('/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const content = await fetchGeneratedContent(id);
-
         const userId = res.locals.user?.id || res.locals.admin?.sub;
-        if (content.user_id !== userId && !res.locals.admin) {
-            return res.status(403).json({ message: 'Forbidden' });
-        }
+        if (content.user_id !== userId && !res.locals.admin) return res.status(403).json({ message: 'Forbidden' });
 
-        await deleteGeneratedContent(id);
+        await softDeleteContent(id); // Changed to soft delete
         return res.json({ ok: true });
     } catch (err: any) {
         console.error('Delete error:', err);

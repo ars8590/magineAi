@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { LogoLink } from '../../components/LogoLink';
 
-import { getLibrary, deleteContent, fetchContent } from '../../lib/api';
+import { getLibrary, deleteContent, fetchContent, toggleFavorite, moveToTrash, restoreContent, permanentDeleteContent, emptyTrash } from '../../lib/api';
 import type { GeneratedContent, MagazineStructure } from '../../types';
 import { exportMultiPageToPdf } from '../../utils/pdf';
 import { MagazinePageRenderer } from '../../components/MagazinePageRenderer';
@@ -95,13 +95,54 @@ export default function DashboardPage() {
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this item?')) return;
     try {
-      await deleteContent(id);
+      await moveToTrash(id);
+      // Optimistic update: mark as deleted so it falls out of standard views
+      setLibraryItems(prev => prev.map(i => i.id === id ? { ...i, deleted_at: new Date().toISOString() } : i));
+    } catch (err) {
+      console.error('Move to trash failed:', err);
+      alert('Failed to move to trash.');
+    }
+  };
+
+  const handleRestore = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    try {
+      await restoreContent(id);
+      setLibraryItems(prev => prev.map(i => i.id === id ? { ...i, deleted_at: null } : i));
+    } catch (err) {
+      console.error('Restore failed:', err);
+    }
+  };
+
+  const handlePermanentDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm('Permanently delete this item? This cannot be undone.')) return;
+    try {
+      await permanentDeleteContent(id);
       setLibraryItems(prev => prev.filter(i => i.id !== id));
     } catch (err) {
-      console.error('Delete failed:', err);
-      alert('Failed to delete item.');
+      console.error('Permanent delete failed:', err);
+    }
+  };
+
+  const handleEmptyTrash = async () => {
+    if (!confirm('Permanently delete all items in trash? This cannot be undone.')) return;
+    try {
+      await emptyTrash();
+      setLibraryItems(prev => prev.filter(i => !i.deleted_at));
+    } catch (err) {
+      console.error('Empty trash failed:', err);
+    }
+  };
+
+  const handleToggleFavorite = async (e: React.MouseEvent, id: string, currentStatus: boolean) => {
+    e.stopPropagation();
+    try {
+      await toggleFavorite(id, !currentStatus);
+      setLibraryItems(prev => prev.map(i => i.id === id ? { ...i, is_favorite: !currentStatus } : i));
+    } catch (err) {
+      console.error('Toggle favorite failed:', err);
     }
   };
 
@@ -152,6 +193,17 @@ export default function DashboardPage() {
 
   const filteredItems = libraryItems
     .filter(item => {
+      // 1. Trash Filter:
+      if (activeFilter === 'Trash') {
+        return !!item.deleted_at;
+      }
+      // Standard View: Hide deleted items
+      if (item.deleted_at) return false;
+
+      // 2. Favorites Filter:
+      if (activeFilter === 'Favorites') return !!item.is_favorite;
+
+      // 3. Type Filters:
       if (activeFilter === 'All Items') return true;
       const typeMap: Record<string, string> = { 'Magazines': 'magazine', 'Books': 'book', 'Stories': 'story' };
       return item.type === typeMap[activeFilter];
@@ -208,22 +260,29 @@ export default function DashboardPage() {
           </div>
           {/* Navigation */}
           <nav className="flex flex-col gap-2">
-            <a className="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary/10 text-primary font-medium transition-colors" href="#">
-              <span className="material-symbols-outlined filled">library_books</span>
+            <button
+              onClick={() => setActiveFilter('All Items')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors text-left ${activeFilter === 'All Items' || activeFilter === 'Magazines' || activeFilter === 'Books' ? 'bg-primary/10 text-primary' : 'text-text-sub-light dark:text-text-sub-dark hover:bg-background-light dark:hover:bg-background-dark/50'}`}
+            >
+              <span className={`material-symbols-outlined ${activeFilter === 'All Items' ? 'filled' : ''}`}>library_books</span>
               <span>Library</span>
-            </a>
-            <a className="flex items-center gap-3 px-4 py-3 rounded-lg text-text-sub-light dark:text-text-sub-dark hover:bg-background-light dark:hover:bg-background-dark/50 hover:text-text-main-light dark:hover:text-white transition-colors" href="#">
-              <span className="material-symbols-outlined">folder_open</span>
-              <span>Collections</span>
-            </a>
-            <a className="flex items-center gap-3 px-4 py-3 rounded-lg text-text-sub-light dark:text-text-sub-dark hover:bg-background-light dark:hover:bg-background-dark/50 hover:text-text-main-light dark:hover:text-white transition-colors" href="#">
-              <span className="material-symbols-outlined">favorite</span>
+            </button>
+
+            <button
+              onClick={() => setActiveFilter('Favorites')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${activeFilter === 'Favorites' ? 'bg-primary/10 text-primary font-medium' : 'text-text-sub-light dark:text-text-sub-dark hover:bg-background-light dark:hover:bg-background-dark/50'}`}
+            >
+              <span className={`material-symbols-outlined ${activeFilter === 'Favorites' ? 'filled' : ''}`}>favorite</span>
               <span>Favorites</span>
-            </a>
-            <a className="flex items-center gap-3 px-4 py-3 rounded-lg text-text-sub-light dark:text-text-sub-dark hover:bg-background-light dark:hover:bg-background-dark/50 hover:text-text-main-light dark:hover:text-white transition-colors" href="#">
-              <span className="material-symbols-outlined">delete</span>
+            </button>
+
+            <button
+              onClick={() => setActiveFilter('Trash')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${activeFilter === 'Trash' ? 'bg-primary/10 text-primary font-medium' : 'text-text-sub-light dark:text-text-sub-dark hover:bg-background-light dark:hover:bg-background-dark/50'}`}
+            >
+              <span className={`material-symbols-outlined ${activeFilter === 'Trash' ? 'filled' : ''}`}>delete</span>
               <span>Trash</span>
-            </a>
+            </button>
           </nav>
           <div className="mt-auto pt-6 border-t border-border-light dark:border-border-dark flex flex-col gap-2">
             <h3 className="px-4 text-xs font-semibold text-text-sub-light dark:text-text-sub-dark uppercase tracking-wider mb-2">Settings</h3>
@@ -335,6 +394,14 @@ export default function DashboardPage() {
                 ))}
               </div>
               <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                {activeFilter === 'Trash' && filteredItems.length > 0 && (
+                  <button
+                    onClick={handleEmptyTrash}
+                    className="text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 px-3 py-2 rounded-lg font-bold border border-red-200 dark:border-red-900/50 transition-colors"
+                  >
+                    Empty Trash
+                  </button>
+                )}
                 <span className="text-sm text-text-sub-light dark:text-text-sub-dark hidden md:block">Sort by:</span>
                 <div className="relative">
                   <select
@@ -366,20 +433,38 @@ export default function DashboardPage() {
                 Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} className={`animate-pulse bg-gray-200 dark:bg-gray-800 rounded-xl ${layout === 'grid' ? 'aspect-[3/4]' : 'h-32 w-full'}`}></div>
                 ))
+              ) : (activeFilter === 'Books' || activeFilter === 'Stories') ? (
+                <div className="col-span-full flex flex-col items-center justify-center py-20 text-center">
+                  <div className="size-24 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-6">
+                    <span className="material-symbols-outlined text-[40px]">
+                      {activeFilter === 'Books' ? 'auto_stories' : 'history_edu'}
+                    </span>
+                  </div>
+                  <h2 className="text-2xl font-bold text-text-main-light dark:text-white mb-2">
+                    {activeFilter} Coming Soon
+                  </h2>
+                  <p className="text-text-sub-light dark:text-text-sub-dark max-w-md">
+                    We are working hard to bring {activeFilter.toLowerCase()} generation to MagineAI. Stay tuned for updates!
+                  </p>
+                </div>
               ) : filteredItems.length === 0 ? (
                 <div className="col-span-full text-center py-20">
-                  <p className="text-text-sub-light dark:text-text-sub-dark text-lg mb-4">No creations found.</p>
-                  <Link href="/create">
-                    <button className="bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-bold transition-all">
-                      Create Your First {activeFilter !== 'All Items' ? activeFilter.slice(0, -1) : 'Masterpiece'}
-                    </button>
-                  </Link>
+                  <p className="text-text-sub-light dark:text-text-sub-dark text-lg mb-4">
+                    {activeFilter === 'Trash' ? 'Trash is empty.' : activeFilter === 'Favorites' ? 'No favorites yet.' : 'No creations found.'}
+                  </p>
+                  {activeFilter !== 'Trash' && activeFilter !== 'Favorites' && (
+                    <Link href="/create">
+                      <button className="bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-bold transition-all">
+                        Create Your First {activeFilter !== 'All Items' ? activeFilter.slice(0, -1) : 'Masterpiece'}
+                      </button>
+                    </Link>
+                  )}
                 </div>
               ) : (
                 filteredItems.map((item) => (
                   <div
                     key={item.id}
-                    onClick={() => router.push(`/reader/${item.id}`)}
+                    onClick={() => activeFilter !== 'Trash' && router.push(`/reader/${item.id}`)}
                     className={`cursor-pointer group relative flex bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-1 transition-all duration-300 ${layout === 'grid' ? 'flex-col' : 'flex-row h-32'}`}
                   >
                     <div className={`bg-gray-200 dark:bg-gray-800 relative overflow-hidden ${layout === 'grid' ? 'aspect-[3/4] w-full' : 'w-24 shrink-0'}`}>
@@ -395,29 +480,58 @@ export default function DashboardPage() {
                         )
                       )}
 
-                      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="p-1.5 bg-white/90 dark:bg-black/80 rounded-full hover:bg-white text-gray-700 dark:text-gray-200">
-                          <span className="material-symbols-outlined text-[20px]">favorite</span>
-                        </button>
-                      </div>
+                      {/* Favorite Button Overlay (Only if not in trash) */}
+                      {activeFilter !== 'Trash' && (
+                        <div className={`absolute top-3 right-3 transition-opacity ${item.is_favorite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                          <button
+                            onClick={(e) => handleToggleFavorite(e, item.id, item.is_favorite || false)}
+                            className={`p-1.5 rounded-full hover:scale-110 transition-transform ${item.is_favorite ? 'bg-white text-red-500' : 'bg-white/90 dark:bg-black/80 text-gray-700 dark:text-gray-200 hover:text-red-500'}`}
+                          >
+                            <span className={`material-symbols-outlined text-[20px] ${item.is_favorite ? 'filled' : ''}`}>favorite</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="p-4 flex flex-col gap-2 flex-1 min-w-0">
                       <div className="flex justify-between items-start">
                         <h3 className="font-bold text-text-main-light dark:text-white leading-tight line-clamp-1" title={item.title}>{item.title}</h3>
+
+                        {/* Action Buttons */}
                         <div className="flex items-center gap-1">
-                          <button
-                            onClick={(e) => handleDownload(e, item.id, item.title)}
-                            className="text-text-sub-light dark:text-text-sub-dark hover:text-primary transition-colors disabled:opacity-50"
-                            title="Download PDF"
-                            disabled={downloadingId === item.id}
-                          >
-                            <span className={`material-symbols-outlined text-[20px] ${downloadingId === item.id ? 'animate-pulse' : ''}`}>
-                              {downloadingId === item.id ? 'downloading' : 'download'}
-                            </span>
-                          </button>
-                          <button onClick={(e) => handleDelete(e, item.id)} className="text-text-sub-light dark:text-text-sub-dark hover:text-red-500 transition-colors" title="Delete">
-                            <span className="material-symbols-outlined text-[20px]">delete</span>
-                          </button>
+                          {activeFilter === 'Trash' ? (
+                            <>
+                              <button
+                                onClick={(e) => handleRestore(e, item.id)}
+                                className="text-text-sub-light dark:text-text-sub-dark hover:text-green-500 transition-colors"
+                                title="Restore"
+                              >
+                                <span className="material-symbols-outlined text-[20px]">restore_from_trash</span>
+                              </button>
+                              <button
+                                onClick={(e) => handlePermanentDelete(e, item.id)}
+                                className="text-text-sub-light dark:text-text-sub-dark hover:text-red-600 transition-colors"
+                                title="Delete Permanently"
+                              >
+                                <span className="material-symbols-outlined text-[20px]">delete_forever</span>
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={(e) => handleDownload(e, item.id, item.title)}
+                                className="text-text-sub-light dark:text-text-sub-dark hover:text-primary transition-colors disabled:opacity-50"
+                                title="Download PDF"
+                                disabled={downloadingId === item.id}
+                              >
+                                <span className={`material-symbols-outlined text-[20px] ${downloadingId === item.id ? 'animate-pulse' : ''}`}>
+                                  {downloadingId === item.id ? 'downloading' : 'download'}
+                                </span>
+                              </button>
+                              <button onClick={(e) => handleDelete(e, item.id)} className="text-text-sub-light dark:text-text-sub-dark hover:text-red-500 transition-colors" title="Move to Trash">
+                                <span className="material-symbols-outlined text-[20px]">delete</span>
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                       {/* Check if description exists and show it in list view */}

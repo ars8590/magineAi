@@ -22,7 +22,7 @@ router.post('/moderate', requireAdmin, async (req, res) => {
   }
 });
 
-import { getAllUsers, updateUserStatus, getAllContent, deleteGeneratedContent } from '../services/storage';
+import { getAllUsers, updateUserStatus, getAllContent, permanentlyDeleteContent } from '../services/storage';
 
 router.get('/users', requireAdmin, async (req, res) => {
   try {
@@ -58,7 +58,7 @@ router.get('/content', requireAdmin, async (req, res) => {
 
 router.delete('/content/:id', requireAdmin, async (req, res) => {
   try {
-    await deleteGeneratedContent(req.params.id);
+    await permanentlyDeleteContent(req.params.id);
     return res.json({ ok: true });
   } catch (err: any) {
     console.error('Error deleting content:', err);

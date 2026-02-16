@@ -19,6 +19,8 @@ export type GeneratedContent = {
   status: 'pending' | 'approved' | 'rejected';
   created_at?: string;
   type?: string;
+  is_favorite?: boolean;
+  deleted_at?: string | null;
 };
 
 export type MagazinePage = {

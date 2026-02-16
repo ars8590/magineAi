@@ -45,8 +45,15 @@ router.post('/', requireAuth, async (req, res) => {
     console.log('Number of images:', generatedImages.length);
 
     // Extract user ID from authenticated session (middleware)
-    // Priority: res.locals.user.id -> req.body.userId (if admin/testing) -> null
-    const userId = res.locals.user?.id || input.userId || null;
+    // Priority: res.locals.user.id -> res.locals.admin.sub -> input.userId -> null
+    // Extract user ID from authenticated session
+    let userId = res.locals.user?.id || input.userId || null;
+
+    if (!userId && res.locals.admin?.sub) {
+      // If Admin, resolve to their Shadow User ID to satisfy FK constraints
+      const { getOrCreateShadowUser } = await import('../services/storage');
+      userId = await getOrCreateShadowUser(res.locals.admin.sub);
+    }
 
     console.log('Saving content for User ID:', userId);
 

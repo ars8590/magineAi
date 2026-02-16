@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { ThemeToggle } from '../../../components/ThemeToggle';
-import { fetchContent, moderateContent, fetchUsers, updateUserStatus, fetchAllAdminContent, deleteAdminContent } from '../../../lib/api';
+import { fetchContent, moderateContent, fetchUsers, updateUserStatus, fetchAllAdminContent, deleteAdminContent, fetchAdminFeedback, fetchFeedbackStats } from '../../../lib/api';
 import type { GeneratedContent } from '../../../types';
 
 interface User {
@@ -23,6 +23,8 @@ export default function AdminDashboardPage() {
 
   const [users, setUsers] = useState<User[]>([]);
   const [contentList, setContentList] = useState<(GeneratedContent & { users: { name: string } | null })[]>([]);
+  const [feedbackList, setFeedbackList] = useState<any[]>([]);
+  const [feedbackStats, setFeedbackStats] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   // Content Review State
@@ -56,6 +58,20 @@ export default function AdminDashboardPage() {
     } catch (err: any) {
       console.error(err);
       setError('Failed to load users: ' + (err?.response?.data?.message || err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadFeedback = async () => {
+    setLoading(true);
+    try {
+      const [list, stats] = await Promise.all([fetchAdminFeedback(), fetchFeedbackStats()]);
+      setFeedbackList(list);
+      setFeedbackStats(stats);
+    } catch (err: any) {
+      console.error(err);
+      setError('Failed to load feedback');
     } finally {
       setLoading(false);
     }
@@ -98,6 +114,7 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (view === 'users' || view === 'overview') loadUsers();
     if (view === 'content' || view === 'overview') loadAllContent();
+    if (view === 'feedback') loadFeedback();
   }, [view]);
 
   const moderate = async (action: 'approve' | 'reject', targetId?: string) => {
@@ -147,6 +164,10 @@ export default function AdminDashboardPage() {
               <span className="text-sm font-medium">Content Moderation</span>
             </div>
             <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{contentList.filter(c => c.status === 'pending').length}</span>
+          </button>
+          <button onClick={() => setView('feedback')} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all group w-full text-left ${view === 'feedback' ? 'bg-primary/10 dark:bg-primary/20 text-primary dark:text-white' : 'text-text-sec-light dark:text-text-sec-dark hover:bg-background-light dark:hover:bg-background-dark hover:text-primary dark:hover:text-white'}`}>
+            <span className="material-symbols-outlined">reviews</span>
+            <span className="text-sm font-medium">Feedback</span>
           </button>
           <ThemeToggle showLabel={true} className="w-full justify-start px-4 py-3 rounded-xl text-text-sec-light dark:text-text-sec-dark hover:bg-background-light dark:hover:bg-background-dark hover:text-primary dark:hover:text-white transition-all group" />
           <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 rounded-xl text-text-sec-light dark:text-text-sec-dark hover:bg-red-500/10 hover:text-red-600 transition-all group w-full text-left mt-auto">
@@ -263,6 +284,72 @@ export default function AdminDashboardPage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            ) : view === 'feedback' ? (
+              <div className="flex flex-col gap-6">
+                {/* Feedback Stats */}
+                {feedbackStats && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm">
+                      <p className="text-sm font-medium text-text-sec-light dark:text-text-sec-dark">Average Rating</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-3xl font-bold">{feedbackStats.averageRating}</span>
+                        <span className="text-yellow-400 material-symbols-outlined filled text-2xl">star</span>
+                      </div>
+                    </div>
+                    <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm">
+                      <p className="text-sm font-medium text-text-sec-light dark:text-text-sec-dark">Total Reviews</p>
+                      <h4 className="text-3xl font-bold mt-2">{feedbackStats.totalFeedback}</h4>
+                    </div>
+                    <div className="bg-surface-light dark:bg-surface-dark p-6 rounded-2xl border border-border-light dark:border-border-dark shadow-sm">
+                      <p className="text-sm font-medium text-text-sec-light dark:text-text-sec-dark">Lowest Rated</p>
+                      {feedbackStats.lowestRated ? (
+                        <div className="mt-2">
+                          <p className="font-bold line-clamp-1" title={feedbackStats.lowestRated.title}>{feedbackStats.lowestRated.title}</p>
+                          <p className="text-sm text-red-500 font-bold">{feedbackStats.lowestRated.rating.toFixed(1)} / 5.0</p>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-sm opacity-50">N/A</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-surface-light dark:bg-surface-dark rounded-2xl border border-border-light dark:border-border-dark shadow-sm overflow-hidden p-6">
+                  <h3 className="text-lg font-bold mb-4">User Feedback</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="border-b border-border-light dark:border-border-dark">
+                          <th className="pb-3 text-sm font-bold opacity-70">Magazine</th>
+                          <th className="pb-3 text-sm font-bold opacity-70">User</th>
+                          <th className="pb-3 text-sm font-bold opacity-70">Rating</th>
+                          <th className="pb-3 text-sm font-bold opacity-70">Comment</th>
+                          <th className="pb-3 text-sm font-bold opacity-70 text-right">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {feedbackList.map((f: any) => (
+                          <tr key={f.id} className="border-b border-border-light dark:border-border-dark last:border-0 hover:bg-background-light dark:hover:bg-background-dark/50">
+                            <td className="py-4 text-sm font-medium max-w-[200px] truncate" title={f.generated_content?.title}>{f.generated_content?.title || 'Unknown'}</td>
+                            <td className="py-4 text-sm">{f.users?.name || 'Unknown'}</td>
+                            <td className="py-4 text-sm">
+                              <div className="flex items-center gap-1">
+                                <span className="font-bold">{f.rating}</span>
+                                <span className="material-symbols-outlined text-sm text-yellow-500 filled">star</span>
+                              </div>
+                            </td>
+                            <td className="py-4 text-sm opacity-80 max-w-[300px] truncate" title={f.comment}>{f.comment || '-'}</td>
+                            <td className="py-4 text-sm text-right opacity-70">{new Date(f.created_at).toLocaleDateString()}</td>
+                          </tr>
+                        ))}
+                        {feedbackList.length === 0 && (
+                          <tr><td colSpan={5} className="py-8 text-center opacity-50">No feedback yet.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             ) : (

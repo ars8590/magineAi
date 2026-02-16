@@ -59,13 +59,77 @@ export async function fetchGeneratedContent(id: string) {
 
 export async function saveFeedback(contentId: string, userId: string | null, rating: number, comment: string) {
   const client = getClient();
-  const { error } = await client.from('feedback').insert({
+  // Upsert based on unique constraint (user_id, content_id)
+  const { error } = await client.from('feedback').upsert({
     content_id: contentId,
     user_id: userId,
     rating,
     comment
-  });
+  }, { onConflict: 'user_id, content_id' });
   if (error) throw error;
+}
+
+export async function getAdminFeedback() {
+  const client = getClient();
+  // Fetch feedback with related user and content data
+  // Note: Supabase joins require the foreign keys to be set up correctly
+  const { data, error } = await client
+    .from('feedback')
+    .select('*, users(name, email), generated_content(title)')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+}
+
+export async function getFeedbackStats() {
+  const client = getClient();
+  const { data: feedback, error } = await client
+    .from('feedback')
+    .select('rating, content_id, generated_content(title)');
+
+  if (error) throw error;
+
+  if (!feedback || feedback.length === 0) {
+    return {
+      averageRating: 0,
+      totalFeedback: 0,
+      lowestRated: null
+    };
+  }
+
+  const totalFeedback = feedback.length;
+  const averageRating = feedback.reduce((acc, curr) => acc + curr.rating, 0) / totalFeedback;
+
+  // Group by content to find lowest rated
+  const contentMap: Record<string, { title: string, sum: number, count: number }> = {};
+
+  feedback.forEach((f: any) => {
+    if (!contentMap[f.content_id]) {
+      contentMap[f.content_id] = {
+        title: f.generated_content?.title || 'Unknown',
+        sum: 0,
+        count: 0
+      };
+    }
+    contentMap[f.content_id].sum += f.rating;
+    contentMap[f.content_id].count += 1;
+  });
+
+  let lowestRatedData = { title: '', rating: 6 };
+
+  Object.values(contentMap).forEach(c => {
+    const avg = c.sum / c.count;
+    if (avg < lowestRatedData.rating) {
+      lowestRatedData = { title: c.title, rating: avg };
+    }
+  });
+
+  return {
+    averageRating: parseFloat(averageRating.toFixed(1)),
+    totalFeedback,
+    lowestRated: lowestRatedData.rating === 6 ? null : lowestRatedData
+  };
 }
 
 export async function findAdmin(username: string) {
@@ -132,15 +196,71 @@ export async function uploadImageFromUrl(sourceUrl: string) {
 }
 
 
+// Soft delete
+export async function softDeleteContent(contentId: string) {
+  const client = getClient();
+  const { error } = await client
+    .from('generated_content')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', contentId);
+  if (error) throw error;
+}
+
+// Restore from trash
+export async function restoreContent(contentId: string) {
+  const client = getClient();
+  const { error } = await client
+    .from('generated_content')
+    .update({ deleted_at: null })
+    .eq('id', contentId);
+  if (error) throw error;
+}
+
+// Toggle Favorite
+export async function toggleFavorite(contentId: string, isFavorite: boolean) {
+  const client = getClient();
+  const { error } = await client
+    .from('generated_content')
+    .update({ is_favorite: isFavorite })
+    .eq('id', contentId);
+  if (error) throw error;
+}
+
+// Permanent Delete (specific item)
+export async function permanentlyDeleteContent(contentId: string) {
+  const client = getClient();
+  const { error } = await client.from('generated_content').delete().eq('id', contentId);
+  if (error) throw error;
+}
+
+// Empty Trash (delete all soft-deleted for user)
+export async function emptyTrash(userId: string) {
+  const client = getClient();
+  const { error } = await client
+    .from('generated_content')
+    .delete()
+    .eq('user_id', userId)
+    .not('deleted_at', 'is', null);
+  if (error) throw error;
+}
+
 export async function getUserLibrary(userId: string) {
   const client = getClient();
+  // Fetch ALL items, including deleted (we filter in frontend or backend route, 
+  // but better to fetch all and let route decide? 
+  // Actually, standard library fetch should HIDE deleted. 
+  // But we need to see them in Trash. 
+  // Let's return everything and let the route/frontend filter? 
+  // No, safer to return all here and let the route handle query params if we want to be strict.
+  // For now, let's just return everything and let the frontend filter for simplicity, 
+  // OR add a param to this function.
+
   const { data, error } = await client
     .from('generated_content')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
-  if (error) throw error;
   if (error) throw error;
 
   // Backfill 'type' since DB doesn't have it yet
@@ -165,15 +285,48 @@ export async function updateUserStatus(userId: string, status: 'active' | 'block
   if (error) throw error;
 }
 
-export async function deleteGeneratedContent(contentId: string) {
-  const client = getClient();
-  const { error } = await client.from('generated_content').delete().eq('id', contentId);
-  if (error) throw error;
-}
-
 export async function getAllContent() {
   const client = getClient();
   const { data, error } = await client.from('generated_content').select('*, users(name)').order('created_at', { ascending: false });
   if (error) throw error;
   return data as (GeneratedContent & { users: { name: string } | null })[];
+}
+export async function getOrCreateShadowUser(adminId: string) {
+  const client = getClient();
+
+  // 1. Get Admin details
+  const { data: admin, error: adminError } = await client
+    .from('admins')
+    .select('*')
+    .eq('id', adminId)
+    .single();
+
+  if (adminError || !admin) throw new Error('Admin not found');
+
+  const shadowEmail = `admin_${admin.username}@internal.magine.ai`;
+
+  // 2. Check if Shadow User exists
+  const { data: user } = await client
+    .from('users')
+    .select('*')
+    .eq('email', shadowEmail)
+    .single();
+
+  if (user) return user.id;
+
+  // 3. Create Shadow User
+  // We use a dummy hash that won't match any password login
+  const { data: newUser, error: createError } = await client
+    .from('users')
+    .insert({
+      email: shadowEmail,
+      name: `Admin (${admin.username})`,
+      password_hash: '$2a$10$ShadowAdminUserPlaceholderHash000000000000000000000',
+      status: 'active'
+    })
+    .select()
+    .single();
+
+  if (createError) throw createError;
+  return newUser.id;
 }

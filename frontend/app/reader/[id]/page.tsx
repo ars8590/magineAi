@@ -3,7 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchContent } from '../../../lib/api';
+import { fetchContent, submitFeedback } from '../../../lib/api';
 import { GeneratedContent, MagazineStructure } from '../../../types';
 import { MagazinePageRenderer } from '../../../components/MagazinePageRenderer';
 import { Loader } from '../../../components/Loader';
@@ -138,7 +138,73 @@ export default function ReaderPage() {
                         </div>
                     </section>
                 )}
+
+                {/* Feedback Section */}
+                <section className="bg-white dark:bg-[#1c192e] rounded-2xl p-8 md:p-12 shadow-sm border border-gray-100 dark:border-gray-800">
+                    <h2 className="text-xl font-bold mb-6 text-text-main-light dark:text-white">Rate this Magazine</h2>
+                    <FeedbackForm contentId={content.id} />
+                </section>
             </main>
+        </div>
+    );
+}
+
+function FeedbackForm({ contentId }: { contentId: string }) {
+    const [rating, setRating] = useState(0);
+    const [comment, setComment] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+    const [submitted, setSubmitted] = useState(false);
+
+    const handleSubmit = async () => {
+        if (rating === 0) return alert("Please select a star rating.");
+        setSubmitting(true);
+        try {
+            await submitFeedback({ content_id: contentId, rating, comment });
+            setSubmitted(true);
+        } catch (err) {
+            alert("Failed to submit feedback. You may have already reviewed this.");
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    if (submitted) {
+        return (
+            <div className="text-center py-8">
+                <span className="material-symbols-outlined text-4xl text-green-500 mb-2">check_circle</span>
+                <p className="text-lg font-bold text-text-main-light dark:text-white">Thank you for your feedback!</p>
+                <p className="text-sm text-text-sub-light dark:text-text-sub-dark">Your review helps us improve.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex flex-col gap-4 max-w-md">
+            <div className="flex items-center gap-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                        key={star}
+                        onClick={() => setRating(star)}
+                        className={`text-3xl transition-transform hover:scale-110 ${rating >= star ? 'text-yellow-400 filled' : 'text-gray-300 dark:text-gray-600'}`}
+                    >
+                        <span className={`material-symbols-outlined ${rating >= star ? 'filled' : ''}`}>star</span>
+                    </button>
+                ))}
+                <span className="ml-2 text-sm text-text-sub-light dark:text-text-sub-dark">{rating > 0 ? `${rating} Stars` : 'Select rating'}</span>
+            </div>
+            <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Write your thoughts (optional)..."
+                className="w-full bg-background-light dark:bg-background-dark border border-gray-200 dark:border-gray-700 rounded-lg p-4 focus:ring-2 focus:ring-primary focus:outline-none min-h-[100px] text-text-main-light dark:text-white"
+            />
+            <button
+                onClick={handleSubmit}
+                disabled={submitting || rating === 0}
+                className="bg-primary hover:bg-primary/90 text-white font-bold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                {submitting ? 'Submitting...' : 'Submit Review'}
+            </button>
         </div>
     );
 }
