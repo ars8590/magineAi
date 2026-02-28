@@ -8,16 +8,17 @@ import { GenerationRequest } from '../types';
 const router = Router();
 
 const payloadSchema = z.object({
-  age: z.number().min(3).max(120),
-  genre: z.string().min(2),
-  theme: z.string().min(2),
-  keywords: z.string().min(2),
-  language: z.string().min(2),
-  pages: z.number().min(1).max(100).optional(),
+  age: z.number().min(3).max(120).optional().default(18),
+  genre: z.string().optional().default('General'),
+  theme: z.string().optional().default('Technology'),
+  keywords: z.string().optional().default(''),
+  language: z.string().optional().default('English'),
+  pages: z.number().min(1).max(100).optional().default(10),
   userId: z.string().optional()
 });
 
 router.post('/', requireAuth, async (req, res) => {
+  console.log('Generate payload:', req.body);
   const parsed = payloadSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: 'Invalid payload', errors: parsed.error.errors });
   const input = parsed.data as GenerationRequest & { userId?: string };
@@ -32,6 +33,7 @@ router.post('/', requireAuth, async (req, res) => {
     // Upload images to Supabase Storage and store the public URLs
     const storedImages = await Promise.all(
       generatedImages.map(async (url: string) => {
+        if (!url || url.trim() === '') return ''; // Skip empty URLs
         try {
           return await uploadImageFromUrl(url);
         } catch (err) {

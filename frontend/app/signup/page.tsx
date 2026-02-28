@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { userSignup, authExchange } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import Link from 'next/link';
+import { LogoLink } from '../../components/LogoLink';
 
 export default function SignupPage() {
     const router = useRouter();
@@ -20,7 +21,8 @@ export default function SignupPage() {
             const { token: appToken, user } = await authExchange(token);
             localStorage.setItem('user_token', appToken);
             localStorage.setItem('user_info', JSON.stringify(user));
-            router.push('/dashboard');
+            // Redirect to onboarding for new users
+            router.push('/onboarding');
         } catch (err: any) {
             setError(err?.response?.data?.message || 'Authentication exchange failed.');
             setLoading(false);
@@ -79,12 +81,12 @@ export default function SignupPage() {
                 {/* Left Section: Form */}
                 <div className="flex-1 flex flex-col justify-center px-6 py-12 lg:px-20 xl:px-32 relative z-10 bg-background-light dark:bg-background-dark">
                     {/* Mobile/Tablet Header Logo */}
-                    <div className="absolute top-6 left-6 lg:top-10 lg:left-10 flex items-center gap-2">
+                    <LogoLink className="absolute top-6 left-6 lg:top-10 lg:left-10 flex items-center gap-2">
                         <div className="size-8 text-primary">
                             <span className="material-symbols-outlined text-[32px]">auto_awesome</span>
                         </div>
                         <h2 className="text-[#100d1b] dark:text-white text-xl font-extrabold tracking-tight">MagineAI</h2>
-                    </div>
+                    </LogoLink>
                     <div className="w-full max-w-[480px] mx-auto mt-12 lg:mt-0">
                         {/* Header */}
                         <div className="mb-8">

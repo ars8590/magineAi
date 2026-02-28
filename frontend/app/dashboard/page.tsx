@@ -5,11 +5,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { LogoLink } from '../../components/LogoLink';
+import { supabase } from '../../lib/supabase';
 
 import { getLibrary, deleteContent, fetchContent, toggleFavorite, moveToTrash, restoreContent, permanentDeleteContent, emptyTrash } from '../../lib/api';
 import type { GeneratedContent, MagazineStructure } from '../../types';
 import { exportMultiPageToPdf } from '../../utils/pdf';
 import { MagazinePageRenderer } from '../../components/MagazinePageRenderer';
+import { ensureBackendSession } from '../../lib/authGuard';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -86,11 +88,16 @@ export default function DashboardPage() {
     generatePdf();
   }, [contentToPrint]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
     localStorage.removeItem('user_token');
     localStorage.removeItem('admin_token');
     localStorage.removeItem('user_info');
-    router.push('/login');
+    router.replace('/');
   };
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
@@ -152,14 +159,14 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('user_token') || localStorage.getItem('admin_token');
-      const userInfo = localStorage.getItem('user_info');
+      const hasSession = await ensureBackendSession();
 
-      if (!token) {
+      if (!hasSession) {
         router.replace('/login');
         return;
       }
 
+      const userInfo = localStorage.getItem('user_info');
       if (userInfo) {
         setUser(JSON.parse(userInfo));
       }
@@ -352,7 +359,7 @@ export default function DashboardPage() {
                   return (
                     <div onClick={() => router.push(`/reader/${latestItem.id}`)} className="cursor-pointer flex flex-col md:flex-row bg-surface-light dark:bg-surface-dark rounded-2xl p-6 shadow-sm border border-border-light dark:border-border-dark gap-6 items-center md:items-stretch group hover:border-primary/30 transition-all">
                       <div className="w-full md:w-1/3 aspect-video md:aspect-auto md:h-48 rounded-xl bg-cover bg-center shadow-md relative overflow-hidden"
-                        style={{ backgroundImage: `url('${latestItem.images?.[0] || 'https://via.placeholder.com/800x600?text=No+Cover'}')` }}>
+                        style={{ backgroundImage: `url('${latestItem.image_urls?.[0] || latestItem.images?.[0] || latestItem.image_url || 'https://via.placeholder.com/800x600?text=No+Cover'}')` }}>
                         <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-all"></div>
                       </div>
                       <div className="flex-1 flex flex-col justify-between py-1 w-full">
@@ -468,7 +475,9 @@ export default function DashboardPage() {
                     className={`cursor-pointer group relative flex bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark overflow-hidden hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-1 transition-all duration-300 ${layout === 'grid' ? 'flex-col' : 'flex-row h-32'}`}
                   >
                     <div className={`bg-gray-200 dark:bg-gray-800 relative overflow-hidden ${layout === 'grid' ? 'aspect-[3/4] w-full' : 'w-24 shrink-0'}`}>
-                      {item.image_url ? (
+                      {item.image_urls && item.image_urls.length > 0 ? (
+                        <div className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105" style={{ backgroundImage: `url('${item.image_urls[0]}')` }}></div>
+                      ) : item.image_url ? (
                         <div className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105" style={{ backgroundImage: `url('${item.image_url}')` }}></div>
                       ) : (
                         item.images && item.images.length > 0 ? (
@@ -568,7 +577,6 @@ export default function DashboardPage() {
             ))}
           </div>
         )}
-
       </main>
     </div>
   );

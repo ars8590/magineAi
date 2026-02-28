@@ -10,6 +10,7 @@ import feedbackRoute from './routes/feedback';
 import adminRoute from './routes/admin';
 import authRoute from './routes/auth';
 import libraryRoute from './routes/library';
+import preferencesRoute from './routes/preferences';
 
 
 
@@ -42,6 +43,7 @@ app.use('/feedback', feedbackRoute);
 app.use('/admin', adminRoute);
 app.use('/auth', authRoute);
 app.use('/library', libraryRoute);
+app.use('/preferences', preferencesRoute);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

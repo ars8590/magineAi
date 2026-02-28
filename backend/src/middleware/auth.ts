@@ -30,7 +30,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     return next();
-  } catch {
+  } catch (err) {
+    console.error('Core Auth Verification Failed:', err);
+    console.log('Token received:', token.substring(0, 20) + '...');
     return res.status(401).json({ message: 'Invalid token' });
   }
 }

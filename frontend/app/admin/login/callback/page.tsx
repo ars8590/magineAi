@@ -2,8 +2,8 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { api } from '@/lib/api';
+import { supabase } from '../../../../lib/supabase';
+import { authExchange } from '../../../../lib/api';
 
 export default function LoginCallbackPage() {
   const router = useRouter();
@@ -18,7 +18,7 @@ export default function LoginCallbackPage() {
       }
 
       try {
-        await api.authExchange(data.session.access_token);
+        await authExchange(data.session.access_token);
         router.replace('/dashboard');
       } catch (err) {
         router.replace('/login');

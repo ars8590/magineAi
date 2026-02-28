@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { adminLogin } from '../../../lib/api';
+import { LogoLink } from '../../../components/LogoLink';
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -32,12 +33,12 @@ export default function AdminLoginPage() {
         {/* Left Section: Login Form */}
         <div className="flex w-full flex-col justify-between bg-white px-4 py-8 dark:bg-slate-900 lg:w-1/2 lg:px-20 lg:py-12 xl:px-32">
           {/* Logo Header */}
-          <div className="flex items-center gap-3">
+          <LogoLink className="flex items-center gap-3">
             <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <span className="material-symbols-outlined text-[24px]">auto_awesome</span>
             </div>
             <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">MagineAI</h2>
-          </div>
+          </LogoLink>
           {/* Login Container */}
           <div className="mx-auto flex w-full max-w-[480px] flex-col justify-center">
             <div className="mb-10 text-center lg:text-left">

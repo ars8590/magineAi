@@ -17,7 +17,7 @@ export default function FeedbackPage() {
     setStatus('submitting');
     setError(null);
     try {
-      await submitFeedback({ contentId, rating, comment });
+      await submitFeedback({ content_id: contentId, rating, comment });
       setStatus('done');
       setComment('');
     } catch (err: any) {

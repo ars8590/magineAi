@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { userLogin, authExchange } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import Link from 'next/link';
+import { LogoLink } from '../../components/LogoLink';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -113,9 +114,21 @@ export default function LoginPage() {
             }
         });
     }, []);
-    // Actually, I'll stick to the button first.
-    // I will add the useEffect in a separate edit or include it here if I can fit it.
-    // I'll put it at the top.
+    // Check for existing Supabase session on mount (for OAuth redirects or persistent sessions)
+    useEffect(() => {
+        const checkSession = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                // Always try to exchange if we have a session.
+                // This creates a fresh token and updates localStorage.
+                // We only skip if we JUST did it (maybe check timestamp?), but for now, 
+                // reliable auth is more important than saving one request on login load.
+                console.log("Session found, exchanging token...");
+                await handleExchange(session.access_token);
+            }
+        };
+        checkSession();
+    }, []);
 
     return (
         <div className="flex flex-1 w-full h-full min-h-screen bg-background-light dark:bg-background-dark font-display">
@@ -123,12 +136,12 @@ export default function LoginPage() {
             <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-6 sm:p-12 xl:p-24 relative z-10 bg-background-light dark:bg-background-dark">
                 <div className="w-full max-w-md flex flex-col gap-8">
                     {/* Logo Header */}
-                    <div className="flex items-center gap-3">
+                    <LogoLink className="flex items-center gap-3">
                         <div className="size-8 text-primary">
                             <span className="material-symbols-outlined text-[32px]">auto_awesome</span>
                         </div>
                         <h2 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">MagineAI</h2>
-                    </div>
+                    </LogoLink>
                     {/* Headline */}
                     <div className="flex flex-col gap-2">
                         <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-gray-900 dark:text-white">Welcome back, Creator</h1>

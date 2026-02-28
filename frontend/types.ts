@@ -16,8 +16,9 @@ export interface GeneratedContent {
     characterHighlights: string;
     conclusion: string;
     content?: string; // Legacy
-    images: string[];
+    images?: string[]; // Legacy mapped
     image_url?: string | null; // Legacy
+    image_urls?: string[];
     type: 'magazine' | 'book' | 'story';
     status: 'pending' | 'approved' | 'rejected';
     created_at: string;

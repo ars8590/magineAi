@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { ThemeToggle } from '../../../components/ThemeToggle';
+import { supabase } from '../../../lib/supabase';
 import { fetchContent, moderateContent, fetchUsers, updateUserStatus, fetchAllAdminContent, deleteAdminContent, fetchAdminFeedback, fetchFeedbackStats } from '../../../lib/api';
 import type { GeneratedContent } from '../../../types';
 
@@ -45,9 +46,14 @@ export default function AdminDashboardPage() {
     }
   }, [router]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
     localStorage.removeItem('admin_token');
-    router.push('/admin/login');
+    router.replace('/admin/login');
   };
 
   const loadUsers = async () => {

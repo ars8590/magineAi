@@ -13,7 +13,28 @@ api.interceptors.request.use((config) => {
     }
   }
   return config;
+  return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      if (typeof window !== 'undefined') {
+        // Clear tokens content on 401 to force re-login/re-exchange
+        localStorage.removeItem('user_token');
+        localStorage.removeItem('user_info');
+        localStorage.removeItem('admin_token');
+
+        // Optional: Redirect to login if not already there
+        if (!window.location.pathname.includes('/login')) {
+          window.location.href = '/login';
+        }
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 export async function generateContent(payload: GenerationRequest) {
   const { data } = await api.post<{ id: string }>('/generate', payload);
@@ -124,5 +145,14 @@ export async function authExchange(supabaseToken: string) {
     '/auth/exchange',
     { supabaseToken }
   );
+  return data;
+}
+
+export async function saveUserPreferences(data: any) {
+  await api.post('/preferences', data);
+}
+
+export async function fetchUserPreferences() {
+  const { data } = await api.get('/preferences');
   return data;
 }

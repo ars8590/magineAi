@@ -155,21 +155,35 @@ export async function generateStory(input: GenerationRequest): Promise<any> {
 
     // --- CHAPTERS (Reflow) ---
     // Helper to split text into chunks of ~245 words (approx 1 page) respecting paragraphs
-    const splitIntoPages = (text: string, wordsPerPage = 245): string[] => {
+    // Helper to split text into chunks of ~250 words with overflow tolerance
+    const splitIntoPages = (text: string, targetWords = 250): string[] => {
       const paragraphs = text.split('\n');
       const pages: string[] = [];
       let currentPage = "";
       let currentWords = 0;
+      const HARD_LIMIT = targetWords * 1.3; // Allow 30% overflow to avoid orphans
 
-      for (const para of paragraphs) {
+      for (let i = 0; i < paragraphs.length; i++) {
+        const para = paragraphs[i];
         if (!para.trim()) continue;
         const paraWords = para.split(/\s+/).length;
 
-        if (currentWords + paraWords > wordsPerPage && currentWords > 100) {
-          // Push current page
-          pages.push(currentPage.trim());
-          currentPage = para + "\n\n";
-          currentWords = paraWords;
+        // Check availability
+        if (currentWords + paraWords > targetWords) {
+          // Heuristic: If this is the last paragraph and perfectly fits within hard limit,
+          // just add it to avoid a lonely page.
+          const isLastPara = i === paragraphs.length - 1;
+          const fitsHardLimit = (currentWords + paraWords) <= HARD_LIMIT;
+
+          if (isLastPara && fitsHardLimit) {
+            currentPage += para + "\n\n";
+            currentWords += paraWords;
+          } else {
+            // Standard break
+            if (currentPage.trim()) pages.push(currentPage.trim());
+            currentPage = para + "\n\n";
+            currentWords = paraWords;
+          }
         } else {
           currentPage += para + "\n\n";
           currentWords += paraWords;

@@ -45,21 +45,23 @@ export function MagazinePageRenderer({ page, structure, renderMode = 'screen' }:
                     </div>
                 </div>
             ) : page.type === 'CONTENTS' ? (
-                <div className="relative h-full p-12 lg:p-20 z-10 flex flex-col">
-                    <h2 className="text-5xl font-black mb-16 text-gray-900 dark:text-white uppercase tracking-tighter">Contents</h2>
-                    <div className="flex-1 space-y-8">
-                        {(() => {
-                            try {
-                                const items = JSON.parse(page.content || '[]');
-                                return items.map((item: any, i: number) => (
-                                    <div key={i} className="flex items-baseline group cursor-pointer hover:text-primary transition dark:text-gray-200">
-                                        <span className="text-2xl font-bold font-serif w-12 text-gray-300 group-hover:text-primary transition-colors">{(item.page < 10 ? '0' : '') + item.page}</span>
-                                        <div className="flex-1 border-b border-gray-200 dark:border-gray-700 mx-4 relative top-[-6px]"></div>
-                                        <span className="text-xl font-medium tracking-tight uppercase">{item.title}</span>
-                                    </div>
-                                ));
-                            } catch (e) { return <p>Contents loading...</p> }
-                        })()}
+                <div className="relative min-h-full flex flex-col justify-between p-12 lg:p-20 pb-24 z-10">
+                    <div className="flex-1 flex flex-col">
+                        <h2 className="text-5xl font-black mb-16 text-gray-900 dark:text-white uppercase tracking-tighter">Contents</h2>
+                        <div className="flex-1 space-y-8">
+                            {(() => {
+                                try {
+                                    const items = JSON.parse(page.content || '[]');
+                                    return items.map((item: any, i: number) => (
+                                        <div key={i} className="flex items-baseline group cursor-pointer hover:text-primary transition dark:text-gray-200">
+                                            <span className="text-2xl font-bold font-serif w-12 text-gray-300 group-hover:text-primary transition-colors">{(item.page < 10 ? '0' : '') + item.page}</span>
+                                            <div className="flex-1 border-b border-gray-200 dark:border-gray-700 mx-4 relative top-[-6px]"></div>
+                                            <span className="text-xl font-medium tracking-tight uppercase">{item.title}</span>
+                                        </div>
+                                    ));
+                                } catch (e) { return <p>Contents loading...</p> }
+                            })()}
+                        </div>
                     </div>
                     <Footer />
                 </div>
@@ -74,7 +76,7 @@ export function MagazinePageRenderer({ page, structure, renderMode = 'screen' }:
                 </div>
             ) : page.type === 'INTRODUCTION' ? (
                 /* INTRODUCTION PAGE - Enforce Top/Side Image (No Overlap) */
-                <div className="flex-1 flex flex-col p-12 lg:p-16 z-10">
+                <div className="flex-1 min-h-full flex flex-col justify-between p-12 lg:p-16 pb-24 z-10">
                     <header className="mb-10">
                         <div className="flex items-center gap-4 mb-4">
                             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{page.type.replace('_', ' ')}</span>
@@ -90,7 +92,7 @@ export function MagazinePageRenderer({ page, structure, renderMode = 'screen' }:
                                 </div>
                             </div>
                         )}
-                        <div className="prose dark:prose-invert max-w-none font-serif text-lg leading-relaxed text-gray-700 dark:text-gray-300">
+                        <div className="prose dark:prose-invert max-w-none font-serif text-lg leading-relaxed text-gray-700 dark:text-gray-300 overflow-visible">
                             {page.content}
                         </div>
                     </div>
@@ -107,7 +109,7 @@ export function MagazinePageRenderer({ page, structure, renderMode = 'screen' }:
                                 {page.image && <img src={page.image} alt={page.title} className="w-full h-full object-cover" crossOrigin="anonymous" />}
                                 <div className="absolute inset-0 bg-black/40"></div>
                             </div>
-                            <div className="relative h-full p-16 flex flex-col justify-end text-white">
+                            <div className="relative h-full p-16 pb-24 flex flex-col justify-end text-white">
                                 {page.chapterNumber && <span className="text-sm font-bold tracking-[0.3em] uppercase mb-4 text-primary">Chapter {page.chapterNumber}</span>}
                                 <h2 className="text-6xl font-black mb-8 leading-tight">{page.title}</h2>
                                 <div className="prose prose-invert prose-lg max-w-2xl font-serif text-white/90 drop-shadow-md">
@@ -123,7 +125,7 @@ export function MagazinePageRenderer({ page, structure, renderMode = 'screen' }:
                         </div>
                     ) : layout === 'quote-break' ? (
                         /* QUOTE BREAK LAYOUT */
-                        <div className="flex-1 flex flex-col items-center justify-center p-16 text-center bg-primary/5">
+                        <div className="flex-1 min-h-full flex flex-col items-center justify-center p-16 pb-24 text-center bg-primary/5">
                             <span className="text-6xl text-primary/20 font-serif mb-8">“</span>
                             <blockquote className="text-4xl font-serif italic text-gray-800 dark:text-gray-100 leading-normal max-w-3xl">
                                 {page.content}
@@ -134,7 +136,7 @@ export function MagazinePageRenderer({ page, structure, renderMode = 'screen' }:
                         </div>
                     ) : (
                         /* STANDARD & IMAGE-SIDE LAYOUTS */
-                        <div className="flex-1 flex flex-col p-12 lg:p-16">
+                        <div className="flex-1 min-h-full flex flex-col justify-between p-12 lg:p-16 pb-24">
                             {/* Page Header */}
                             <header className="mb-10">
                                 <div className="flex items-center gap-4 mb-4">
@@ -164,7 +166,7 @@ export function MagazinePageRenderer({ page, structure, renderMode = 'screen' }:
                                 )}
 
                                 {/* Text Block */}
-                                <div className={`prose dark:prose-invert max-w-none font-serif text-lg leading-relaxed text-gray-700 dark:text-gray-300 ${layout === 'simple-text' ? 'columns-1 lg:columns-2 gap-12' : ''}`}>
+                                <div className={`prose dark:prose-invert max-w-none font-serif text-lg leading-relaxed text-gray-700 dark:text-gray-300 overflow-visible ${layout === 'simple-text' ? 'columns-1 lg:columns-2 gap-12' : ''}`}>
                                     {page.content}
                                 </div>
                             </div>

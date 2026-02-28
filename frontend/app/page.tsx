@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '../components/ThemeToggle';
@@ -87,6 +87,15 @@ const showcaseItems = [
 export default function Home() {
   const router = useRouter();
   const [activeCategory, setActiveCategory] = useState("Children's Books");
+
+  useEffect(() => {
+    // Clear any pending generation state to prevent stale data
+    // when a user returns to the landing page.
+    if (typeof window !== 'undefined') {
+      // e.g., if you had a 'temp_generation_payload'
+      // localStorage.removeItem('temp_generation_payload'); 
+    }
+  }, []);
 
   const filteredItems = showcaseItems.filter(item => item.category === activeCategory);
 

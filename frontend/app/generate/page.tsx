@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { Navbar } from '../../components/Navbar';
 import { generateContent } from '../../lib/api';
 import type { GenerationRequest } from '../../types';
+import { ensureBackendSession } from '../../lib/authGuard';
 
 export default function GeneratePage() {
   const router = useRouter();
@@ -20,17 +21,17 @@ export default function GeneratePage() {
     const age = params.get('age');
     const genre = params.get('genre');
     const theme = params.get('theme');
-    const keywords = params.get('keywords');
+    const keywords = params.get('keywords') || '';
     const language = params.get('language');
     const pages = params.get('pages');
-    if (!age || !genre || !theme || !keywords || !language) return null;
+    // Use defaults if parameters are missing
     return {
-      age: Number(age),
-      genre,
-      theme,
-      keywords,
-      language,
-      pages: pages ? Number(pages) : undefined
+      age: age ? Number(age) : 18,
+      genre: genre || 'General',
+      theme: theme || 'Technology',
+      keywords: keywords || '',
+      language: language || 'English',
+      pages: pages ? Number(pages) : 10
     };
   }, [params]);
 
@@ -40,10 +41,6 @@ export default function GeneratePage() {
       return;
     }
 
-    if (generationStarted.current) return;
-    generationStarted.current = true;
-
-    // Start Simulation of Progress
     let interval: NodeJS.Timeout;
 
     const startProgress = () => {
@@ -96,7 +93,19 @@ export default function GeneratePage() {
     };
 
     const run = async () => {
+      // 1. Ensure Backend Session First
+      const hasSession = await ensureBackendSession();
+      if (!hasSession) {
+        setError('Authentication required. Please log in.');
+        setTimeout(() => router.replace('/login'), 2000);
+        return;
+      }
+
+      if (generationStarted.current) return;
+      generationStarted.current = true;
+
       startProgress();
+
       try {
         const { id } = await generateContent(payload);
 

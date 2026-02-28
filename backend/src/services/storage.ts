@@ -23,16 +23,43 @@ export async function verifySupabaseToken(token: string) {
   return user;
 }
 
-export async function savePreference(userId: string | null, input: GenerationRequest) {
+export async function savePreference(userId: string | null, input: GenerationRequest & { gender?: string; interests?: string[] }) {
   const client = getClient();
+  // Check if preference exists for user to update or insert? 
+  // Requirement says "Store ... in existing preferences table".
+  // Usually preferences are 1 per user? Or per generation?
+  // The current schema has an ID and a user_id. 
+  // If we want "User Profile Preferences" (onboarding), it should probably be one row per user that gets updated,
+  // OR we just insert a new row every time they generate (which is what the old code did for generation history).
+  // BUT the requirement says "user onboarding preferences... Store these in the existing preferences table".
+  // And "Prefill fields... from profile".
+  // So we likely want a "latest" preference or a unique constraint.
+  // Let's assume we insert a new row for history, but for "Profile" we might want to query the LATEST row.
+
   await client.from('preferences').insert({
     user_id: userId,
     age: input.age,
+    gender: input.gender, // New
+    interests: input.interests, // New
     genre: input.genre,
     theme: input.theme,
     keywords: input.keywords,
     language: input.language
   });
+}
+
+export async function getUserPreferences(userId: string) {
+  const client = getClient();
+  const { data, error } = await client
+    .from('preferences')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "Row not found" (single)
+  return data;
 }
 
 export async function saveGeneratedContent(

@@ -5,13 +5,21 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { LogoLink } from '../../components/LogoLink';
+import { fetchUserPreferences } from '../../lib/api';
 import type { GenerationRequest } from '../../types';
+
+const steps = [
+  { id: 'topic', title: 'What is your story about?' },
+  { id: 'audience', title: 'Who is this for?' },
+  { id: 'style', title: 'Choose a style' },
+  { id: 'format', title: 'Final touches' }
+];
 
 const initial: GenerationRequest = {
   age: 13,
   genre: 'Sci-Fi',
   theme: 'Space Exploration',
-  keywords: 'Time Travel, Friendship',
+  keywords: '',
   language: 'English',
   pages: 20
 };
@@ -22,68 +30,69 @@ const genres = [
   { id: 'Mystery', icon: 'search', label: 'Mystery' },
   { id: 'Romance', icon: 'favorite', label: 'Romance' },
   { id: 'Historical', icon: 'history_edu', label: 'Historical' },
-  { id: 'Comedy', icon: 'theater_comedy', label: 'Comedy' }
+  { id: 'Comedy', icon: 'theater_comedy', label: 'Comedy' },
+  { id: 'Adventure', icon: 'explore', label: 'Adventure' },
+  { id: 'Horror', icon: 'skull', label: 'Horror' }
 ];
 
 const themes = [
-  'Space Exploration',
-  'Victorian London',
-  'Medieval Fantasy',
-  'Cyberpunk Future',
-  'Underwater Adventure',
-  'Time Travel',
-  'Magic School',
-  'Post-Apocalyptic',
-  'Steampunk',
-  'Ancient Egypt',
-  'Fairy Tale Kingdom',
-  'Space Station',
-  'Tropical Island',
-  'Arctic Expedition',
-  'Wild West',
-  'Samurai Era',
-  'Pirate Adventure',
-  'Superhero City',
-  'Alien Planet',
-  'Haunted Mansion'
+  'Space Exploration', 'Victorian London', 'Medieval Fantasy', 'Cyberpunk Future',
+  'Underwater Adventure', 'Time Travel', 'Magic School', 'Post-Apocalyptic',
+  'Steampunk', 'Ancient Egypt', 'Fairy Tale Kingdom', 'Space Station',
+  'Tropical Island', 'Arctic Expedition', 'Wild West', 'Samurai Era',
+  'Pirate Adventure', 'Superhero City', 'Alien Planet', 'Haunted Mansion'
 ];
 
 const languages = [
   { code: 'en', name: 'English' },
-  { code: 'ml', name: 'Malayalam' },
   { code: 'hi', name: 'Hindi' },
+  { code: 'ml', name: 'Malayalam' },
   { code: 'es', name: 'Spanish' },
-  { code: 'fr', name: 'French' },
-  { code: 'de', name: 'German' },
-  { code: 'it', name: 'Italian' },
-  { code: 'pt', name: 'Portuguese' },
-  { code: 'ru', name: 'Russian' },
-  { code: 'ja', name: 'Japanese' },
-  { code: 'ko', name: 'Korean' },
-  { code: 'zh', name: 'Chinese' },
-  { code: 'ar', name: 'Arabic' },
-  { code: 'ta', name: 'Tamil' },
-  { code: 'te', name: 'Telugu' },
-  { code: 'kn', name: 'Kannada' },
-  { code: 'bn', name: 'Bengali' },
-  { code: 'gu', name: 'Gujarati' },
-  { code: 'mr', name: 'Marathi' },
-  { code: 'pa', name: 'Punjabi' }
+  { code: 'fr', name: 'French' }
 ];
-
-const pageOptions = [10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100];
 
 export default function CreatePage() {
   const router = useRouter();
+  const [currentStep, setCurrentStep] = useState(0);
   const [form, setForm] = useState<GenerationRequest>(initial);
-  const [keywords, setKeywords] = useState<string[]>(['Time Travel', 'Friendship']);
+  const [keywords, setKeywords] = useState<string[]>([]);
   const [keywordInput, setKeywordInput] = useState('');
+  const [loadingPrefs, setLoadingPrefs] = useState(true);
+  const [isPersonalized, setIsPersonalized] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('user_token') || localStorage.getItem('admin_token');
-    if (!token) {
-      router.push('/login');
-    }
+    const init = async () => {
+      const token = localStorage.getItem('user_token') || localStorage.getItem('admin_token');
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+
+      try {
+        const prefs = await fetchUserPreferences();
+        if (prefs) {
+          setIsPersonalized(true);
+          setForm(prev => ({
+            ...prev,
+            age: prefs.age || prev.age,
+            language: prefs.language || prev.language,
+            // If genre is stored as comma separated, take first or match
+            genre: (prefs.genre && prefs.genre.split(',')[0]) || prev.genre,
+            // Interests could map to keywords or theme? 
+            // Let's add interests to keywords if available
+            keywords: prefs.interests ? prefs.interests.join(', ') : prev.keywords || ''
+          }));
+          if (prefs.interests && prefs.interests.length > 0) {
+            setKeywords(prefs.interests);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load preferences', err);
+      } finally {
+        setLoadingPrefs(false);
+      }
+    };
+    init();
   }, [router]);
 
   const update = (key: keyof GenerationRequest, value: string | number) => {
@@ -93,385 +102,268 @@ export default function CreatePage() {
   const addKeyword = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && keywordInput.trim()) {
       e.preventDefault();
-      setKeywords([...keywords, keywordInput.trim()]);
+      const newK = [...keywords, keywordInput.trim()];
+      setKeywords(newK);
       setKeywordInput('');
-      update('keywords', [...keywords, keywordInput.trim()].join(', '));
+      update('keywords', newK.join(', '));
     }
   };
 
   const removeKeyword = (idx: number) => {
-    const newKeywords = keywords.filter((_, i) => i !== idx);
-    setKeywords(newKeywords);
-    update('keywords', newKeywords.join(', '));
+    const newK = keywords.filter((_, i) => i !== idx);
+    setKeywords(newK);
+    update('keywords', newK.join(', '));
   };
 
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const params = new URLSearchParams({
-      age: String(form.age),
-      genre: form.genre,
-      theme: form.theme,
-      keywords: Array.isArray(form.keywords) ? form.keywords.join(', ') : form.keywords,
-      language: form.language,
-      pages: String(form.pages || 20)
-    });
-    router.push(`/generate?${params.toString()}`);
+  const handleNext = () => {
+    if (currentStep < steps.length - 1) {
+      setCurrentStep(prev => prev + 1);
+    } else {
+      // Submit
+      const params = new URLSearchParams({
+        age: String(form.age),
+        genre: form.genre,
+        theme: form.theme,
+        keywords: keywords.join(', '),
+        language: form.language,
+        pages: String(form.pages || 20)
+      });
+      router.push(`/generate?${params.toString()}`);
+    }
   };
 
+  const handleBack = () => {
+    if (currentStep > 0) setCurrentStep(prev => prev - 1);
+  };
 
+  if (loadingPrefs) {
+    return (
+      <div className="min-h-screen bg-background-light dark:bg-background-dark flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-background-light dark:bg-background-dark font-display text-text-main-light dark:text-gray-100 antialiased overflow-x-hidden min-h-screen">
-      {/* Top Navigation */}
-      <header className="sticky top-0 z-50 w-full bg-[#f9f8fc] dark:bg-background-dark border-b border-solid border-border-light dark:border-gray-800">
+    <div className="bg-background-light dark:bg-background-dark font-display text-text-main-light dark:text-gray-100 antialiased min-h-screen flex flex-col">
+      {/* Header */}
+      <header className="sticky top-0 z-50 w-full bg-white/80 dark:bg-[#0f0c1d]/80 backdrop-blur-md border-b border-border-light dark:border-gray-800">
         <div className="px-4 md:px-10 py-3 flex items-center justify-between max-w-7xl mx-auto">
-
-          <div className="flex items-center gap-4 text-text-main-light dark:text-white">
-            <LogoLink className="flex items-center gap-4">
-              <div className="size-8 text-primary">
-                <span className="material-symbols-outlined text-3xl">auto_awesome</span>
-              </div>
-              <h2 className="text-xl font-bold leading-tight tracking-[-0.015em]">MagineAI</h2>
-            </LogoLink>
-          </div>
-          {/* Desktop Nav */}
-          <div className="hidden md:flex flex-1 justify-end gap-8 items-center">
-            <div className="flex items-center gap-6">
-              <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">Home</Link>
-              <Link className="text-sm font-medium hover:text-primary transition-colors" href="/dashboard">My Library</Link>
-              <a className="text-sm font-medium hover:text-primary transition-colors" href="#">Community</a>
+          <LogoLink className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-3xl">auto_awesome</span>
+            <span className="font-bold text-xl">MagineAI</span>
+          </LogoLink>
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">
+              ME
             </div>
-            <div className="flex items-center gap-4">
-              <ThemeToggle />
-              <Link href="/create">
-                <button className="flex items-center justify-center overflow-hidden rounded-lg h-9 px-4 bg-primary text-white text-sm font-bold shadow-md hover:bg-primary/90 transition-colors">
-                  <span className="truncate">Create New</span>
-                </button>
-              </Link>
-              <div className="bg-center bg-no-repeat bg-cover rounded-full size-9 ring-2 ring-gray-100 dark:ring-gray-700" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuB4RgcX6FoD_uoP_GQ6gPxDVXl5hc6LaAD9h03VzfFcLS_QpNIjRrRRnBXTL4yc8LWMTY7RFqxXtMnhYD_fllSJFJraKa3aAp3YadbobMans5EolLVo84tnEnW5o6M9JPV-q-tv1hC6jm-J63Q7Y2K2yC2sfLlPv4fNJwjKsuRWOsivLHZNECNJl4CyBxkDyQkzYp_i4SkIaRty04iZ_IslIOtX-DlnacxuX6NP3z0fjm13oxyPbGloSnzeKVJhFN6Uu0DkorVVKiVK')" }}></div>
-            </div>
-          </div>
-          {/* Mobile Menu Icon */}
-          <div className="md:hidden text-text-main-light dark:text-white">
-            <span className="material-symbols-outlined">menu</span>
           </div>
         </div>
       </header>
 
-      <main className="flex flex-col min-h-[calc(100vh-65px)]">
-        <div className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-10 py-8">
-          <div className="flex flex-col lg:flex-row gap-8 xl:gap-12">
-            {/* LEFT COLUMN: Input Form */}
-            <div className="flex-1 flex flex-col gap-8">
-              {/* Page Heading */}
-              <div className="flex flex-col gap-3">
-                <h1 className="text-4xl md:text-5xl font-black leading-tight tracking-[-0.033em] text-text-main-light dark:text-white">
-                  Let's craft your <span className="text-primary">perfect story</span>
-                </h1>
-                <p className="text-text-sub-light dark:text-gray-400 text-lg font-normal leading-normal max-w-2xl">
-                  Tell us a bit about what you want to read, and our AI will weave the magic specifically for you.
-                </p>
+      <main className="flex-1 max-w-5xl mx-auto w-full p-4 md:p-8 flex flex-col">
+        {/* Progress Bar */}
+        <div className="mb-8">
+          <div className="flex justify-between mb-2">
+            {steps.map((step, idx) => (
+              <div key={step.id} className={`text-xs font-bold uppercase tracking-wider ${idx <= currentStep ? 'text-primary' : 'text-gray-400'}`}>
+                {step.title}
               </div>
+            ))}
+          </div>
+          <div className="h-2 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all duration-300 ease-out"
+              style={{ width: `${((currentStep) / (steps.length - 1)) * 100}%` }}
+            ></div>
+          </div>
+        </div>
 
-              {/* Section 1: Age Group */}
-              <section className="bg-white dark:bg-[#1c192e] rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
-                <h3 className="text-lg font-bold leading-tight tracking-[-0.015em] mb-6 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary">face</span>
-                  Who is this story for?
-                </h3>
-                <div className="flex flex-col gap-6">
-                  {(() => {
-                    // DISCRETE SLIDER LOGIC
-                    const AGE_STEPS = [
-                      { label: 'Kids', value: 8, description: 'Child-friendly content' }, // Index 0
-                      { label: 'Teens (13-17)', value: 15, description: 'Young Adult content' }, // Index 1
-                      { label: 'Adults', value: 25, description: 'Mature/General audience' }  // Index 2
-                    ];
+        {/* Wizard Content */}
+        <div className="flex-1 bg-white dark:bg-[#1c192e] rounded-2xl shadow-xl border border-gray-100 dark:border-gray-800 p-6 md:p-10 relative overflow-hidden">
+          {isPersonalized && (
+            <div className="absolute top-4 right-4 bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 text-primary text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">auto_awesome</span>
+              Personalized for you
+            </div>
+          )}
 
-                    const getStepFromAge = (age: number) => {
-                      if (age < 13) return 0;
-                      if (age < 18) return 1;
-                      return 2;
-                    };
+          <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <h2 className="text-3xl font-black mb-2">{steps[currentStep].title}</h2>
+            <p className="text-gray-500 dark:text-gray-400 mb-8 text-lg">Step {currentStep + 1} of {steps.length}</p>
 
-                    const currentStep = getStepFromAge(form.age);
-                    const currentLabel = AGE_STEPS[currentStep].label;
-                    const stepPercentage = (currentStep / 2) * 100;
-
-                    return (
-                      <>
-                        <div className="flex justify-between items-end">
-                          <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Target Age Group</label>
-                          <div className="text-right">
-                            <span className="text-2xl font-bold text-primary block">{currentLabel}</span>
-                            <span className="text-xs text-gray-400 font-medium">{AGE_STEPS[currentStep].description}</span>
-                          </div>
-                        </div>
-
-                        {/* Custom Snap Slider */}
-                        <div className="relative w-full h-12 flex items-center select-none group">
-                          {/* Track Background */}
-                          <div className="absolute w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div className="h-full bg-primary transition-all duration-300 ease-out" style={{ width: `${stepPercentage}%` }}></div>
-                          </div>
-
-                          {/* Hidden Input for Logic */}
-                          <input
-                            type="range"
-                            min="0"
-                            max="2"
-                            step="1"
-                            value={currentStep}
-                            onChange={(e) => update('age', AGE_STEPS[Number(e.target.value)].value)}
-                            className="absolute w-full h-full opacity-0 cursor-pointer z-20"
-                            aria-label="Select Age Group"
-                          />
-
-                          {/* Visible Thumb */}
-                          <div
-                            className="absolute z-10 size-6 bg-white border-4 border-primary rounded-full shadow-md cursor-grab active:cursor-grabbing transition-all duration-300 ease-out group-hover:scale-110 group-active:scale-125"
-                            style={{
-                              left: `calc(${stepPercentage}% - 12px)`, // Center thumb (12px is half of size-6)
-                            }}
-                          ></div>
-
-                          {/* Step Markers/Ticks */}
-                          <div className="absolute w-full flex justify-between px-1 pointer-events-none">
-                            {[0, 1, 2].map(step => (
-                              <div key={step} className={`size-2 rounded-full transition-colors duration-300 ${step <= currentStep ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
-                            ))}
-                          </div>
-
-                          {/* Labels below */}
-                          <div className="absolute top-8 w-full flex justify-between text-xs font-bold text-gray-400 mt-1 pointer-events-none">
-                            <span onClick={() => update('age', 8)} className="cursor-pointer hover:text-primary transition-colors pointer-events-auto">Kids</span>
-                            <span onClick={() => update('age', 15)} className="cursor-pointer hover:text-primary transition-colors pointer-events-auto">Teens</span>
-                            <span onClick={() => update('age', 25)} className="cursor-pointer hover:text-primary transition-colors pointer-events-auto">Adults</span>
-                          </div>
-                        </div>
-                      </>
-                    );
-                  })()}
+            {/* Step 1: Topic */}
+            {currentStep === 0 && (
+              <div className="space-y-8">
+                <div>
+                  <label className="block text-sm font-bold mb-3">Core Theme</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400">lightbulb</span>
+                    <select
+                      value={form.theme}
+                      onChange={(e) => update('theme', e.target.value)}
+                      className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-gray-800 border-none rounded-xl text-lg font-medium focus:ring-2 focus:ring-primary"
+                    >
+                      {themes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
                 </div>
-              </section>
 
-              {/* Section 2: Genre Selection */}
-              <section className="bg-white dark:bg-[#1c192e] rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
-                <h3 className="text-lg font-bold leading-tight tracking-[-0.015em] mb-6 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary">explore</span>
-                  Pick a world to explore
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {genres.map((genre) => (
-                    <div
-                      key={genre.id}
-                      onClick={() => update('genre', genre.id)}
-                      className={`relative group cursor-pointer border-2 rounded-xl p-4 flex flex-col items-center text-center gap-3 transition-all ${form.genre === genre.id
-                        ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                        : 'border-transparent hover:border-primary/30 bg-gray-50 dark:bg-gray-800/50'
+                <div>
+                  <label className="block text-sm font-bold mb-3">Keywords (What else should be included?)</label>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {keywords.map((k, i) => (
+                      <span key={i} className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-bold flex items-center gap-1">
+                        {k} <button onClick={() => removeKeyword(i)} className="hover:text-red-500">×</button>
+                      </span>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={keywordInput}
+                    onChange={(e) => setKeywordInput(e.target.value)}
+                    onKeyDown={addKeyword}
+                    placeholder="Type a keyword and press Enter (e.g., Robots, Summer, Magic)"
+                    className="w-full px-4 py-4 bg-gray-50 dark:bg-gray-800 border-none rounded-xl text-lg font-medium focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Audience */}
+            {currentStep === 1 && (
+              <div className="space-y-8">
+                <div>
+                  <label className="block text-sm font-bold mb-3">Target Age Group</label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { val: 8, label: 'Kids (6-10)' },
+                      { val: 13, label: 'Teens (11-15)' },
+                      { val: 18, label: 'Young Adults' },
+                      { val: 25, label: 'Adults (21+)' }
+                    ].map((opt) => (
+                      <button
+                        key={opt.val}
+                        onClick={() => update('age', opt.val)}
+                        className={`p-4 rounded-xl border-2 text-center transition-all ${(form.age < 13 && opt.val === 8) ||
+                            (form.age >= 13 && form.age < 18 && opt.val === 13) ||
+                            (form.age >= 18 && form.age < 21 && opt.val === 18) ||
+                            (form.age >= 21 && opt.val === 25)
+                            ? 'border-primary bg-primary/5 text-primary font-bold shadow-lg'
+                            : 'border-gray-200 dark:border-gray-700 hover:border-primary/50 text-gray-600 dark:text-gray-300'
+                          }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold mb-3">Language</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400">language</span>
+                    <select
+                      value={form.language}
+                      onChange={(e) => update('language', e.target.value)}
+                      className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-gray-800 border-none rounded-xl text-lg font-medium focus:ring-2 focus:ring-primary"
+                    >
+                      {languages.map(l => <option key={l.code} value={l.name}>{l.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Style */}
+            {currentStep === 2 && (
+              <div className="space-y-4">
+                <label className="block text-sm font-bold mb-3">Choose a Genre</label>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {genres.map(g => (
+                    <button
+                      key={g.id}
+                      onClick={() => update('genre', g.id)}
+                      className={`relative p-4 rounded-xl border-2 flex flex-col items-center gap-3 transition-all ${form.genre === g.id
+                          ? 'border-primary bg-primary/5 text-primary shadow-lg ring-1 ring-primary'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-primary/50 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'
                         }`}
                     >
-                      {form.genre === genre.id && (
+                      <span className="material-symbols-outlined text-3xl">{g.icon}</span>
+                      <span className="font-bold">{g.label}</span>
+                      {form.genre === g.id && (
                         <div className="absolute top-2 right-2 text-primary">
-                          <span className="material-symbols-outlined text-xl">check_circle</span>
+                          <span className="material-symbols-outlined text-lg">check_circle</span>
                         </div>
                       )}
-                      <div className={`size-12 rounded-full bg-white dark:bg-gray-800 shadow-sm flex items-center justify-center transition-colors ${form.genre === genre.id ? 'text-primary' : 'text-gray-500 dark:text-gray-400 group-hover:text-primary'
-                        }`}>
-                        <span className="material-symbols-outlined text-2xl">{genre.icon}</span>
-                      </div>
-                      <span className={`font-medium text-sm ${form.genre === genre.id ? 'font-bold' : 'text-gray-600 dark:text-gray-300'
-                        }`}>{genre.label}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
-              </section>
+              </div>
+            )}
 
-              {/* Section 3: Fine Tuning */}
-              <section className="bg-white dark:bg-[#1c192e] rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
-                <h3 className="text-lg font-bold leading-tight tracking-[-0.015em] mb-6 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary">tune</span>
-                  Add the details
-                </h3>
-                <div className="flex flex-col gap-6">
-                  {/* Theme Input */}
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Main Theme</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 z-10">lightbulb</span>
-                      <select
-                        value={form.theme}
-                        onChange={(e) => update('theme', e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-shadow text-text-main-light dark:text-white appearance-none cursor-pointer"
-                      >
-                        {themes.map((theme) => (
-                          <option key={theme} value={theme}>
-                            {theme}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 pointer-events-none">expand_more</span>
-                    </div>
-                  </div>
-                  {/* Keywords Tags */}
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Keywords & Elements</label>
-                    <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg min-h-[100px] flex flex-wrap content-start gap-2">
-                      {keywords.map((keyword, idx) => (
-                        <div key={idx} className="flex items-center gap-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full px-3 py-1 shadow-sm">
-                          <span className="text-xs font-medium">{keyword}</span>
-                          <button
-                            type="button"
-                            onClick={() => removeKeyword(idx)}
-                            className="flex items-center justify-center text-gray-400 hover:text-red-500"
-                          >
-                            <span className="material-symbols-outlined text-sm">close</span>
-                          </button>
-                        </div>
-                      ))}
-                      <input
-                        type="text"
-                        value={keywordInput}
-                        onChange={(e) => setKeywordInput(e.target.value)}
-                        onKeyDown={addKeyword}
-                        className="bg-transparent border-none text-sm focus:ring-0 p-0 h-7 min-w-[120px] text-text-main-light dark:text-white placeholder-gray-400"
-                        placeholder="Type and press Enter..."
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500">Try keywords like 'Dragons', 'Mars Colony', or 'Summer Vacation'</p>
-                  </div>
-                  {/* Language Input */}
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Language</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 z-10">language</span>
-                      <select
-                        value={form.language}
-                        onChange={(e) => update('language', e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-shadow text-text-main-light dark:text-white appearance-none cursor-pointer"
-                      >
-                        {languages.map((lang) => (
-                          <option key={lang.code} value={lang.name}>
-                            {lang.name}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 pointer-events-none">expand_more</span>
-                    </div>
-                  </div>
-                  {/* Number of Pages */}
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Number of Pages</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 z-10">menu_book</span>
-                      <select
-                        value={form.pages || 20}
-                        onChange={(e) => update('pages', Number(e.target.value))}
-                        className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-shadow text-text-main-light dark:text-white appearance-none cursor-pointer"
-                      >
-                        {pageOptions.map((pages) => (
-                          <option key={pages} value={pages}>
-                            {pages} pages
-                          </option>
-                        ))}
-                      </select>
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 pointer-events-none">expand_more</span>
-                    </div>
+            {/* Step 4: Format/Review */}
+            {currentStep === 3 && (
+              <div className="space-y-8">
+                <div>
+                  <label className="block text-sm font-bold mb-3">Length (Pages)</label>
+                  <input
+                    type="range"
+                    min="10"
+                    max="50"
+                    step="5"
+                    value={form.pages || 20}
+                    onChange={(e) => update('pages', e.target.value)}
+                    className="w-full accent-primary h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between mt-2 font-bold text-gray-500">
+                    <span>10</span>
+                    <span className="text-primary text-xl">{form.pages || 20} Pages</span>
+                    <span>50</span>
                   </div>
                 </div>
-              </section>
-            </div>
 
-            {/* RIGHT COLUMN: Sidebar Summary */}
-            <div className="w-full lg:w-[360px] flex-shrink-0">
-              <div className="sticky top-24 flex flex-col gap-4">
-                {/* Summary Card */}
-                <div className="bg-white dark:bg-[#1c192e] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800 flex flex-col h-full">
-                  <div className="flex items-center gap-2 mb-4 text-text-main-light dark:text-white">
-                    <span className="material-symbols-outlined text-primary">assignment</span>
-                    <h3 className="font-bold text-lg">Your Blueprint</h3>
-                  </div>
-                  <div className="flex-1 flex flex-col gap-4 mb-6">
-                    {/* Summary Items */}
-                    <div className="flex gap-3 items-start">
-                      <div className="mt-1 size-2 rounded-full bg-primary flex-shrink-0"></div>
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Audience</p>
-                        <p className="text-sm font-semibold text-text-main-light dark:text-white">
-                          {form.age < 13 ? 'Kids' : form.age < 18 ? 'Teens (13-17)' : 'Adults'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-3 items-start">
-                      <div className="mt-1 size-2 rounded-full bg-primary flex-shrink-0"></div>
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Genre</p>
-                        <p className="text-sm font-semibold text-text-main-light dark:text-white">{form.genre}</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-3 items-start">
-                      <div className="mt-1 size-2 rounded-full bg-primary flex-shrink-0"></div>
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Theme</p>
-                        <p className="text-sm font-semibold text-text-main-light dark:text-white">{form.theme || 'Not set'}</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-3 items-start">
-                      <div className="mt-1 size-2 rounded-full bg-primary flex-shrink-0"></div>
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Keywords</p>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {keywords.map((keyword, idx) => (
-                            <span key={idx} className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs text-gray-600 dark:text-gray-300">{keyword}</span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex gap-3 items-start">
-                      <div className="mt-1 size-2 rounded-full bg-primary flex-shrink-0"></div>
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Language</p>
-                        <p className="text-sm font-semibold text-text-main-light dark:text-white">{form.language}</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-3 items-start">
-                      <div className="mt-1 size-2 rounded-full bg-primary flex-shrink-0"></div>
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Pages</p>
-                        <p className="text-sm font-semibold text-text-main-light dark:text-white">{form.pages || 20} pages</p>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Live Estimate / Note */}
-                  <div className="bg-primary/5 rounded-lg p-3 mb-6 flex gap-3 items-center">
-                    <span className="material-symbols-outlined text-primary text-xl">timer</span>
-                    <p className="text-xs text-gray-600 dark:text-gray-300 font-medium">Estimated generation time: <span className="text-primary font-bold">~2 minutes</span></p>
-                  </div>
-                  <form onSubmit={onSubmit}>
-                    <button
-                      type="submit"
-                      className="w-full py-4 bg-primary text-white rounded-lg font-bold text-lg shadow-lg hover:shadow-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2 group"
-                    >
-                      <span className="material-symbols-outlined group-hover:animate-pulse">auto_awesome</span>
-                      Generate Magic
-                    </button>
-                  </form>
-                  <p className="text-center text-xs text-gray-400 mt-3">You will be able to preview before saving.</p>
-                </div>
-                {/* Helper Banner */}
-                <div className="bg-gradient-to-r from-[#4b2bee] to-[#6d51f3] rounded-xl p-5 text-white relative overflow-hidden hidden lg:block">
-                  {/* Abstract shape decoration */}
-                  <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-white/20 rounded-full blur-xl"></div>
-                  <div className="absolute -left-6 -top-6 w-20 h-20 bg-white/10 rounded-full blur-lg"></div>
-                  <div className="relative z-10">
-                    <p className="font-bold text-sm mb-1">Need inspiration?</p>
-                    <p className="text-xs text-white/90 mb-3">Check out what others are creating in the Community Library.</p>
-                    <a className="inline-flex items-center text-xs font-bold underline decoration-white/50 hover:decoration-white" href="#">
-                      Explore Library <span className="material-symbols-outlined text-sm ml-1">arrow_forward</span>
-                    </a>
-                  </div>
+                <div className="bg-primary/5 border border-primary/20 rounded-2xl p-6">
+                  <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary">summarize</span>
+                    Summary
+                  </h3>
+                  <p className="text-lg leading-relaxed">
+                    You are about to generate a <span className="font-bold text-primary">{form.genre}</span> magazine
+                    about <span className="font-bold text-primary">{form.theme}</span> for
+                    <span className="font-bold text-primary"> {form.age < 13 ? 'Kids' : form.age < 18 ? 'Teens' : 'Adults'}</span>.
+                    <br />
+                    <span className="text-sm text-gray-500 mt-2 block">
+                      Language: {form.language} • Length: {form.pages} pages
+                      {keywords.length > 0 && ` • Keywords: ${keywords.join(', ')}`}
+                    </span>
+                  </p>
                 </div>
               </div>
+            )}
+
+            {/* Navigation Buttons */}
+            <div className="flex justify-between items-center mt-12 pt-6 border-t border-gray-100 dark:border-gray-800">
+              <button
+                onClick={handleBack}
+                disabled={currentStep === 0}
+                className={`font-bold transition-colors ${currentStep === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:text-black dark:hover:text-white'}`}
+              >
+                Back
+              </button>
+
+              <button
+                onClick={handleNext}
+                className="px-8 py-3 bg-primary text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-primary/40 hover:-translate-y-0.5 transition-all flex items-center gap-2"
+              >
+                {currentStep === steps.length - 1 ? (
+                  <>
+                    <span>Generate</span>
+                    <span className="material-symbols-outlined">auto_awesome</span>
+                  </>
+                ) : 'Next'}
+              </button>
             </div>
           </div>
         </div>
